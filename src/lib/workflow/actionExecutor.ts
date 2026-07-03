@@ -205,7 +205,7 @@ export async function executeAction(
         if (!tagId) {
           return { action: "remove_tag", assetsProcessed: 0 };
         }
-        await immichFetch(`/tags/${tagId}/assets`, "DELETE", { ids: assetIds }, user);
+        await immichFetchBatched(`/tags/${tagId}/assets`, "DELETE", assetIds, {}, user);
         return { action: "remove_tag", assetsProcessed: assetIds.length };
       } catch (e: any) {
         return { action: "remove_tag", assetsProcessed: 0, error: e.message };
