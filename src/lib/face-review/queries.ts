@@ -356,3 +356,71 @@ export async function getPeopleWithCounts(
     faceCount: +r.face_count,
   }));
 }
+
+/** Autocomplete source + name resolution: the owner's REAL-named people. */
+export async function getNamedPeople(ownerId: string): Promise<{ id: string; name: string }[]> {
+  const { rows } = await db.execute(sql`
+    SELECT p.id::text AS id, p.name
+      FROM person p
+     WHERE p."ownerId" = ${ownerId} AND p.name <> ''
+       AND p.name NOT LIKE ${STRANGER_PREFIXES[0] + "%"}
+       AND p.name NOT LIKE ${STRANGER_PREFIXES[1] + "%"}
+     ORDER BY LOWER(p.name) ASC
+  `);
+  return rows.map((r: any) => ({ id: r.id, name: (r.name || "").trim() }));
+}
+
+/**
+ * Hide a detection that isn't a real face (statue, pet, blur): what Immich
+ * does internally for hidden faces (isVisible=false + detach) — reversible,
+ * unlike the REST DELETE /faces/{id}, which the source tool never got
+ * live-confirmed. Owner-scoped through the face's asset; PER-FACE only by
+ * design (the removed bulk variant was the accident risk).
+ * Returns false for an unknown/foreign face (no write).
+ */
+export async function hideFace(faceId: string, ownerId: string): Promise<boolean> {
+  if (!ownerId) throw new Error("ownerId required (multi-user DB, refusing unscoped update)");
+  const result = await db.execute(sql`
+    UPDATE asset_face af
+       SET "isVisible" = false, "personId" = NULL
+      FROM asset a
+     WHERE af.id = ${faceId}
+       AND a.id = af."assetId"
+       AND a."ownerId" = ${ownerId}
+       AND a."deletedAt" IS NULL
+  `);
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Delete the owner's person records with zero visible, non-deleted faces —
+ * the debris failed/retried reassigns leave behind. ownerId REQUIRED (an
+ * unscoped delete on the shared table would hit other users' records).
+ */
+export async function deleteEmptyPeople(ownerId: string): Promise<number> {
+  if (!ownerId) throw new Error("ownerId required (multi-user DB, refusing unscoped delete)");
+  const result = await db.execute(sql`
+    DELETE FROM person
+     WHERE id IN (
+       SELECT p.id FROM person p
+        WHERE p."ownerId" = ${ownerId}
+          AND NOT EXISTS (
+            SELECT 1 FROM asset_face af
+             WHERE af."personId" = p.id
+               AND af."isVisible" = true
+               AND af."deletedAt" IS NULL
+          )
+     )
+  `);
+  return result.rowCount ?? 0;
+}
+
+/** Exact-name match among the owner's people (case-insensitive). */
+export async function findPersonByName(ownerId: string, name: string): Promise<string | null> {
+  const { rows } = await db.execute(sql`
+    SELECT p.id::text AS id FROM person p
+     WHERE p."ownerId" = ${ownerId} AND LOWER(TRIM(p.name)) = LOWER(TRIM(${name}))
+     LIMIT 1
+  `);
+  return rows.length ? (rows[0] as any).id : null;
+}

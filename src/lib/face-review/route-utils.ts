@@ -10,10 +10,16 @@ import { personOwnedBy } from "@/lib/face-review/queries";
  * Face Review route MUST pass this gate before touching the DB (a foreign
  * person id must 404, indistinguishable from nonexistent).
  */
+export interface IFaceReviewUser {
+  id: string;
+  isUsingAPIKey?: boolean;
+  accessToken?: string;
+}
+
 export async function requireOwnedPerson(
   req: NextApiRequest,
   res: NextApiResponse
-): Promise<{ ownerId: string; personId: string } | null> {
+): Promise<{ ownerId: string; personId: string; user: IFaceReviewUser } | null> {
   const personId = String(req.query.id || "");
   if (!/^[0-9a-f-]{36}$/i.test(personId)) {
     res.status(400).json({ error: "Invalid person id" });
@@ -28,17 +34,17 @@ export async function requireOwnedPerson(
     res.status(404).json({ error: "Person not found" });
     return null;
   }
-  return { ownerId: currentUser.id, personId };
+  return { ownerId: currentUser.id, personId, user: currentUser };
 }
 
 export async function requireUser(
   req: NextApiRequest,
   res: NextApiResponse
-): Promise<{ ownerId: string } | null> {
+): Promise<{ ownerId: string; user: IFaceReviewUser } | null> {
   const currentUser = await getCurrentUser(req);
   if (!currentUser?.id) {
     res.status(401).json({ error: "Not authenticated" });
     return null;
   }
-  return { ownerId: currentUser.id };
+  return { ownerId: currentUser.id, user: currentUser };
 }
