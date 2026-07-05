@@ -27,6 +27,19 @@ import { IFaceCluster, IFaceReviewFace, IFaceReviewScope } from "@/types/faceRev
 
 export const STRANGER_PREFIXES = ["Stranger ", "Rando "] as const;
 
+/**
+ * Only faces on assets the owner can actually SEE belong in review. Immich
+ * v3 visibility states, verified against a live instance (thumbnail + asset
+ * endpoints, owner's own credentials):
+ *   timeline -> 200, archive -> 200, locked -> 400, hidden -> 404.
+ * `locked` is the PIN-protected Locked Folder — deliberately concealed, so
+ * surfacing even its face metadata here would be a privacy leak (and its
+ * crops render as "load failed" since the thumbnail proxy 400s). `hidden`
+ * is internal (e.g. motion-photo video parts). Archived photos stay fully
+ * reviewable. This predicate must accompany EVERY join against asset.
+ */
+const VIEWABLE = sql`a.visibility IN ('timeline', 'archive')`;
+
 const toDateStr = (v: unknown): string | null => {
   if (!v) return null;
   const d = v instanceof Date ? v : new Date(String(v));
@@ -60,7 +73,7 @@ export async function getPersonMeta(personId: string, ownerId: string) {
       FROM person p
       LEFT JOIN asset_face af
         ON af."personId" = p.id AND af."isVisible" = true AND af."deletedAt" IS NULL
-      LEFT JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL
+      LEFT JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE}
      WHERE p.id = ${personId} AND p."ownerId" = ${ownerId}
      GROUP BY p.id
   `);
@@ -79,7 +92,7 @@ const CENTROID_CTE = (personId: string) => sql`
     SELECT AVG(fs.embedding) AS c
       FROM asset_face af
       JOIN face_search fs ON fs."faceId" = af.id
-      JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL
+      JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE}
      WHERE af."personId" = ${personId}
        AND af."isVisible" = true AND af."deletedAt" IS NULL
   )
@@ -120,7 +133,7 @@ export async function getRankedFaces(
            COUNT(*) OVER()::int AS total
       FROM asset_face af
       LEFT JOIN face_search fs ON fs."faceId" = af.id
-      JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND a."ownerId" = ${ownerId}
+      JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
       JOIN person p ON p.id = af."personId"
       CROSS JOIN centroid
      WHERE af."personId" = ${personId}
@@ -147,7 +160,7 @@ async function fetchOwnFaceEmbeddings(personId: string, ownerId: string): Promis
            fs.embedding::text AS emb
       FROM asset_face af
       JOIN face_search fs ON fs."faceId" = af.id
-      JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND a."ownerId" = ${ownerId}
+      JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
       CROSS JOIN centroid
      WHERE af."personId" = ${personId}
        AND af."isVisible" = true AND af."deletedAt" IS NULL
@@ -237,7 +250,7 @@ const candidateSelect = (personId: string, ownerId: string, scope: IFaceReviewSc
          fs.embedding::text AS emb
     FROM asset_face af
     JOIN face_search fs ON fs."faceId" = af.id
-    JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND a."ownerId" = ${ownerId}
+    JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
     LEFT JOIN person p ON p.id = af."personId"
     CROSS JOIN centroid
    WHERE af."isVisible" = true AND af."deletedAt" IS NULL
@@ -342,7 +355,7 @@ export async function getPeopleWithCounts(
       FROM person p
       LEFT JOIN asset_face af
         ON af."personId" = p.id AND af."isVisible" = true AND af."deletedAt" IS NULL
-      LEFT JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL ${prebirthJoin}
+      LEFT JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} ${prebirthJoin}
      WHERE p."ownerId" = ${ownerId} ${nameFilter} ${hiddenFilter}
      GROUP BY p.id
     ${filter === "prebirth" ? sql`HAVING COUNT(a.id) > 0` : sql``}
