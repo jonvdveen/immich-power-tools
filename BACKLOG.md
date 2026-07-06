@@ -17,9 +17,3 @@ context in project memory (`immich-power-tools-cull.md`,
 - Upstream PR still deferred by user request — see
   `local-testing/FACE_REVIEW_PR_NOTES.md` (git-ignored) for the as-built
   4-PR split when ready.
-- **FR-1**: Remote-performance pass 2026-07-06 (server-side face crops via
-  sharp at `/api/face-review/faces/[faceId]/crop`, immutable/cache headers on
-  image proxies, native lazy-loading `<img>` in FaceCrop). Deployed to the
-  local `:8001` container but UNCOMMITTED and not yet in the public GHCR
-  image (v0.23.0 predates it) — commit + tag a release once user confirms
-  crops look right and remote loading feels fast.
