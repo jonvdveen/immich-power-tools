@@ -1,39 +1,44 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, ThumbsDown } from "lucide-react";
 import toast from "react-hot-toast";
 
+import BulkBar from "@/components/face-review/BulkBar";
 import FaceCard from "@/components/face-review/FaceCard";
 import Lightbox from "@/components/face-review/Lightbox";
 import { addRejects, clearRejects, loadRejects } from "@/components/face-review/rejectList";
+import ReviewTabs, { IReviewNavProps } from "@/components/face-review/ReviewTabs";
+import { useFaceSelection } from "@/components/face-review/useFaceSelection";
 import { Button } from "@/components/ui/button";
-import { getCandidates, reassignFaces } from "@/handlers/api/faceReview.handler";
-import { IFaceReviewFace, IFaceReviewScope } from "@/types/faceReview";
+import { getCandidates } from "@/handlers/api/faceReview.handler";
+import { IFaceReviewFace } from "@/types/faceReview";
 
 const BATCH = 24;
 
 /**
- * "Find more > Faces": Yes/No staged review of look-alike candidates,
- * closest-first. Nothing is written until Apply: Yes faces get reassigned
- * to this person; No faces go to the per-device reject list (reviewer
- * scratch state — deliberately never written to Immich).
+ * "Find more > Faces": multi-select review of look-alike candidates,
+ * closest-first — the same select/BulkBar surface as the cluster and Tagged
+ * views (was per-card Yes/No). Select the crops that ARE this person and
+ * "Assign name" (prefilled with them = one-click confirm), or split a group
+ * off as a stranger. "No, not them" hides the selection on this device via
+ * the per-device reject list — deliberately never written to Immich.
  */
 export default function FindMoreFacesView({
   personId,
   personName,
-  scope,
+  ...nav
 }: {
   personId: string;
   personName: string;
-  scope: IFaceReviewScope;
-}) {
+} & IReviewNavProps) {
+  const { scope } = nav;
   const [cards, setCards] = useState<IFaceReviewFace[]>([]);
   const [hasNext, setHasNext] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [picks, setPicks] = useState<Set<string>>(new Set());
-  const [rejects, setRejects] = useState<Set<string>>(new Set());
   const [skipCount, setSkipCount] = useState(0);
   const [lightboxAsset, setLightboxAsset] = useState<string | null>(null);
+
+  const orderedIds = useMemo(() => cards.map((c) => c.faceId), [cards]);
+  const selection = useFaceSelection(orderedIds);
 
   const refreshSkipCount = useCallback(() => setSkipCount(loadRejects(personId).size), [personId]);
 
@@ -60,57 +65,33 @@ export default function FindMoreFacesView({
 
   useEffect(() => {
     setCards([]);
-    setPicks(new Set());
-    setRejects(new Set());
+    selection.clear();
     refreshSkipCount();
     load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [personId, scope]);
 
-  const verdict = (faceId: string, kind: "yes" | "no") => {
-    const from = kind === "yes" ? setPicks : setRejects;
-    const other = kind === "yes" ? setRejects : setPicks;
-    from((prev) => {
-      const next = new Set(prev);
-      if (next.has(faceId)) next.delete(faceId);
-      else next.add(faceId);
-      return next;
-    });
-    other((prev) => {
-      const next = new Set(prev);
-      next.delete(faceId);
-      return next;
-    });
+  /** Drop faces from the visible grid once they've been actioned. */
+  const removeCards = (faceIds: string[]) => {
+    const gone = new Set(faceIds);
+    setCards((prev) => prev.filter((c) => !gone.has(c.faceId)));
+    selection.clear();
   };
 
-  const apply = async () => {
-    if (applying) return;
-    const yes = [...picks], no = [...rejects];
-    if (!yes.length && !no.length) return;
-    setApplying(true);
-    try {
-      const results: string[] = [];
-      if (yes.length) {
-        const res = await reassignFaces({ faceIds: yes, personId });
-        results.push(`added ${res.done}` + (res.failed ? `, ${res.failed} failed` : ""));
-      }
-      if (no.length) {
-        addRejects(personId, no); // only now do the No marks persist
-        results.push(`skipped ${no.length}`);
-      }
-      toast.success(`Applied: ${results.join(" · ")}`);
-      setPicks(new Set());
-      setRejects(new Set());
-      refreshSkipCount();
-      load(true);
-    } catch (e: any) {
-      toast.error(`Failed: ${e?.error || e?.message || "unknown"}`); // staged marks stay for retry
-    } finally {
-      setApplying(false);
-    }
+  const afterWrite = (faceIds: string[], summary: string) => {
+    toast.success(summary);
+    removeCards(faceIds);
   };
 
-  const stagedCount = picks.size + rejects.size;
+  const rejectSelected = () => {
+    const ids = [...selection.selected];
+    if (!ids.length) return;
+    addRejects(personId, ids); // per-device only — writes nothing to Immich
+    removeCards(ids);
+    refreshSkipCount();
+    toast.success(`Skipped ${ids.length} on this device`);
+  };
+
   const emptyText = useMemo(
     () =>
       scope === "named"
@@ -121,10 +102,19 @@ export default function FindMoreFacesView({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      {/* tab bar (incl. the Include selector) + Select all/none on one row */}
+      <div className="flex flex-wrap items-center gap-3">
+        <ReviewTabs {...nav} />
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={selection.selectAll} disabled={!cards.length}>Select all</Button>
+          <Button size="sm" variant="outline" onClick={selection.clear} disabled={!selection.selected.size}>Select none</Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <span>
-          &quot;Yes&quot; assigns the face to {personName || "this person"}; &quot;No&quot; skips it for good on this
-          device. Nothing happens until you press Apply.
+          Select the faces that are {personName || "this person"}, then Assign. &quot;No, not
+          them&quot; hides the selection on this device (nothing is written to Immich).
         </span>
         {skipCount > 0 && (
           <span className="ml-auto">
@@ -144,21 +134,24 @@ export default function FindMoreFacesView({
         )}
       </div>
 
-      {stagedCount > 0 && (
-        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-lg border border-primary bg-card px-4 py-3">
-          <span className="text-sm font-semibold">
-            {picks.size} Yes · {rejects.size} No
-          </span>
-          <Button size="sm" disabled={applying} onClick={apply}>
-            {applying && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-            Apply to {personName || "this person"}
-          </Button>
-          <Button
-            size="sm" variant="ghost" disabled={applying}
-            onClick={() => { setPicks(new Set()); setRejects(new Set()); }}
-          >
-            Clear
-          </Button>
+      {selection.selected.size > 0 && (
+        <div className="sticky top-0 z-20">
+          <BulkBar
+            selectedIds={[...selection.selected]}
+            defaultTarget={{ personId, name: personName }}
+            onDone={afterWrite}
+            onCancel={selection.clear}
+            extraActions={
+              <Button
+                size="sm"
+                variant="outline"
+                title="Not this person — hide these candidates on this device (writes nothing to Immich)"
+                onClick={rejectSelected}
+              >
+                <ThumbsDown size={14} className="mr-1" /> No, not them
+              </Button>
+            }
+          />
         </div>
       )}
 
@@ -170,25 +163,17 @@ export default function FindMoreFacesView({
             <FaceCard
               key={face.faceId}
               face={face}
-              verdict={picks.has(face.faceId) ? "yes" : rejects.has(face.faceId) ? "no" : null}
+              selected={selection.selected.has(face.faceId)}
               onCropClick={() => setLightboxAsset(face.assetId)}
             >
-              <div className="mt-2 flex gap-1">
+              <div className="mt-2">
                 <Button
                   size="sm"
-                  variant={picks.has(face.faceId) ? "default" : "outline"}
-                  className="flex-1 h-7 text-xs"
-                  onClick={() => verdict(face.faceId, "yes")}
+                  variant={selection.selected.has(face.faceId) ? "default" : "outline"}
+                  className="w-full h-7 text-xs"
+                  onClick={(e) => selection.toggle(face.faceId, e.shiftKey)}
                 >
-                  Yes
-                </Button>
-                <Button
-                  size="sm"
-                  variant={rejects.has(face.faceId) ? "destructive" : "outline"}
-                  className="flex-1 h-7 text-xs"
-                  onClick={() => verdict(face.faceId, "no")}
-                >
-                  No
+                  {selection.selected.has(face.faceId) ? "✓ Selected" : "Select"}
                 </Button>
               </div>
             </FaceCard>

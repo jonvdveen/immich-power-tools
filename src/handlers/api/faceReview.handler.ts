@@ -75,3 +75,9 @@ export const clearEmptyPeople = (): Promise<{ deleted: number }> =>
 
 export const scanMissing = (): Promise<{ queuedAt: string }> =>
   API.post(`${BASE}/scan-missing`, {});
+
+/** Facial-recognition queue snapshot: { jobCounts, queueStatus } (for polling scan progress). */
+export const getScanStatus = (): Promise<{
+  jobCounts?: Record<string, number>;
+  queueStatus?: { isActive?: boolean; isPaused?: boolean };
+}> => API.get(`${BASE}/job-status`);

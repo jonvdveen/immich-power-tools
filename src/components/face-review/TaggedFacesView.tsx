@@ -8,6 +8,7 @@ import FaceCard from "@/components/face-review/FaceCard";
 import Lightbox from "@/components/face-review/Lightbox";
 import Pager from "@/components/face-review/Pager";
 import PersonNameInput, { INameValue } from "@/components/face-review/PersonNameInput";
+import ReviewTabs, { IReviewNavProps } from "@/components/face-review/ReviewTabs";
 import { useFaceSelection } from "@/components/face-review/useFaceSelection";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,16 +22,26 @@ import { IFaceReviewFace } from "@/types/faceReview";
 type ISort = "confidence" | "recent" | "oldest";
 
 /**
- * "Tagged faces > Faces": the person's own faces, least-typical-first.
- * Single-face corrections live in a per-card menu; multi-select (click a
- * crop, shift-click for a range, Select all) drives the shared BulkBar.
+ * "Tagged > Faces": the person's own faces, least-typical-first. By default
+ * each card offers a single-face "Not <person>" correction. A top-level
+ * "Select" button flips the whole grid into multi-select mode — cards become
+ * togglable and the shared BulkBar drives bulk reassign/stranger — instead of
+ * a Select button under every crop.
  */
-export default function TaggedFacesView({ personId, personName }: { personId: string; personName: string }) {
+export default function TaggedFacesView({
+  personId,
+  personName,
+  tab,
+  sub,
+  scope,
+  setParams,
+}: { personId: string; personName: string } & IReviewNavProps) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
   const [sort, setSort] = useState<ISort>("confidence");
   const [show, setShow] = useState<"all" | "prebirth">("all");
+  const [selectMode, setSelectMode] = useState(false);
   const [lightboxAsset, setLightboxAsset] = useState<string | null>(null);
   const [openMenuFace, setOpenMenuFace] = useState<string | null>(null);
   const [menuTarget, setMenuTarget] = useState<INameValue>({ name: "" });
@@ -52,7 +63,11 @@ export default function TaggedFacesView({ personId, personName }: { personId: st
   );
   const orderedIds = useMemo(() => visibleFaces.map((f) => f.faceId), [visibleFaces]);
   const selection = useFaceSelection(orderedIds);
-  const selectMode = selection.selected.size > 0;
+
+  const exitSelectMode = () => {
+    selection.clear();
+    setSelectMode(false);
+  };
 
   const refetchPage = () => {
     setRemoved(new Set());
@@ -141,44 +156,57 @@ export default function TaggedFacesView({ personId, personName }: { personId: st
 
   return (
     <div className="flex flex-col gap-4">
-      {/* controls */}
+      {/* controls — tab bar + filters on one row (#3) */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm text-muted-foreground">Show</label>
-        <Select value={show} onValueChange={(v) => { setShow(v as any); setPage(1); setRemoved(new Set()); }}>
-          <SelectTrigger className="w-40 h-8"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All faces</SelectItem>
-            <SelectItem value="prebirth">Before birth date</SelectItem>
-          </SelectContent>
-        </Select>
-        {show !== "prebirth" && (
+        <ReviewTabs tab={tab} sub={sub} scope={scope} setParams={setParams} />
+        {selectMode ? (
+          <div className="ml-auto flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={selection.selectAll}>Select all</Button>
+            <Button size="sm" variant="outline" onClick={selection.clear}>Select none</Button>
+          </div>
+        ) : (
           <>
-            <label className="text-sm text-muted-foreground">Sort</label>
-            <Select value={sort} onValueChange={(v) => { setSort(v as ISort); setPage(1); setRemoved(new Set()); }}>
-              <SelectTrigger className="w-44 h-8"><SelectValue /></SelectTrigger>
+            <label className="text-sm text-muted-foreground">Show</label>
+            <Select value={show} onValueChange={(v) => { setShow(v as any); setPage(1); setRemoved(new Set()); }}>
+              <SelectTrigger className="w-40 h-8"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="confidence">Least typical first</SelectItem>
-                <SelectItem value="recent">Most recent</SelectItem>
-                <SelectItem value="oldest">Oldest</SelectItem>
+                <SelectItem value="all">All faces</SelectItem>
+                <SelectItem value="prebirth">Before birth date</SelectItem>
               </SelectContent>
             </Select>
+            {show !== "prebirth" && (
+              <>
+                <label className="text-sm text-muted-foreground">Sort</label>
+                <Select value={sort} onValueChange={(v) => { setSort(v as ISort); setPage(1); setRemoved(new Set()); }}>
+                  <SelectTrigger className="w-44 h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="confidence">Least typical first</SelectItem>
+                    <SelectItem value="recent">Newest</SelectItem>
+                    <SelectItem value="oldest">Oldest</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+            <label className="text-sm text-muted-foreground">Per page</label>
+            <Select value={String(perPage)} onValueChange={(v) => { setPerPage(+v); setPage(1); setRemoved(new Set()); }}>
+              <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[25, 50, 100, 200].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setGlobalOpen((o) => !o)}>
+                Whole person <ChevronDown size={14} className="ml-1" />
+              </Button>
+              {/* One Select button (#4) instead of a Select under every crop. */}
+              <Button size="sm" variant="outline" onClick={() => { setGlobalOpen(false); setSelectMode(true); }}>
+                Select
+              </Button>
+            </div>
           </>
         )}
-        <label className="text-sm text-muted-foreground">Per page</label>
-        <Select value={String(perPage)} onValueChange={(v) => { setPerPage(+v); setPage(1); setRemoved(new Set()); }}>
-          <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {[25, 50, 100, 200].map((n) => (
-              <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setGlobalOpen((o) => !o)}>
-            Whole person <ChevronDown size={14} className="ml-1" />
-          </Button>
-          <Button size="sm" variant="outline" onClick={selection.selectAll}>Select all</Button>
-        </div>
       </div>
 
       {show === "prebirth" && !query.data?.birthDate && !query.isLoading && (
@@ -205,8 +233,8 @@ export default function TaggedFacesView({ personId, personName }: { personId: st
         <BulkBar
           selectedIds={[...selection.selected]}
           onDone={afterWrite}
-          onCancel={selection.clear}
-          hint="Shift-click for a range"
+          onCancel={exitSelectMode}
+          hint="Click crops to select · shift-click for a range"
         />
       )}
 
@@ -224,29 +252,32 @@ export default function TaggedFacesView({ personId, personName }: { personId: st
               face={face}
               selected={selection.selected.has(face.faceId)}
               onCropClick={(e) => {
-                if (selectMode || e.shiftKey) selection.toggle(face.faceId, e.shiftKey);
+                if (selectMode) selection.toggle(face.faceId, e.shiftKey);
                 else setLightboxAsset(face.assetId);
               }}
             >
-              {!selectMode && (
+              {selectMode ? (
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    variant={selection.selected.has(face.faceId) ? "default" : "outline"}
+                    className="w-full h-7 text-xs"
+                    onClick={(e) => selection.toggle(face.faceId, e.shiftKey)}
+                  >
+                    {selection.selected.has(face.faceId) ? "✓ Selected" : "Select"}
+                  </Button>
+                </div>
+              ) : (
                 <div className="mt-2 flex flex-col gap-1">
-                  <div className="flex gap-1">
-                    <Button
-                      size="sm" variant="outline" className="flex-1 h-7 text-xs"
-                      onClick={() => selection.toggle(face.faceId)}
-                    >
-                      Select
-                    </Button>
-                    <Button
-                      size="sm" variant="destructive" className="flex-1 h-7 text-xs"
-                      onClick={() => {
-                        setOpenMenuFace(openMenuFace === face.faceId ? null : face.faceId);
-                        setMenuTarget({ name: "" });
-                      }}
-                    >
-                      Not {personName || "them"}
-                    </Button>
-                  </div>
+                  <Button
+                    size="sm" variant="destructive" className="w-full h-7 text-xs"
+                    onClick={() => {
+                      setOpenMenuFace(openMenuFace === face.faceId ? null : face.faceId);
+                      setMenuTarget({ name: "" });
+                    }}
+                  >
+                    Not {personName || "them"}
+                  </Button>
                   {openMenuFace === face.faceId && (
                     <div className="flex flex-col gap-1 rounded-md border bg-muted/40 p-2">
                       <PersonNameInput

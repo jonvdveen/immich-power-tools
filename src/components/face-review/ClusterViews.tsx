@@ -8,11 +8,12 @@ import FaceCard from "@/components/face-review/FaceCard";
 import FaceCrop from "@/components/face-review/FaceCrop";
 import Lightbox from "@/components/face-review/Lightbox";
 import { addRejects, loadRejects } from "@/components/face-review/rejectList";
+import ReviewTabs, { IReviewNavProps } from "@/components/face-review/ReviewTabs";
 import { useFaceSelection } from "@/components/face-review/useFaceSelection";
 import { Button } from "@/components/ui/button";
 import { getCandidateClusters, getPersonClusters } from "@/handlers/api/faceReview.handler";
 import { cn } from "@/lib/utils";
-import { IFaceCluster, IFaceReviewScope } from "@/types/faceReview";
+import { IFaceCluster } from "@/types/faceReview";
 
 /** Mosaic card for one cluster: up to 6 sample crops + count. */
 function ClusterCard({ cluster, onOpen, subtitle }: { cluster: IFaceCluster; onOpen: () => void; subtitle?: string }) {
@@ -22,10 +23,10 @@ function ClusterCard({ cluster, onOpen, subtitle }: { cluster: IFaceCluster; onO
       onClick={onOpen}
       className="rounded-xl border bg-card p-3 text-left transition-colors hover:border-primary"
     >
-      <div
-        className="grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${Math.min(samples.length, 3)}, 1fr)` }}
-      >
+      {/* Always 3 columns so every crop is the same size regardless of how
+          many faces the cluster has (a 2-face cluster used to render big
+          half-width crops; keep them at the 4-6-face size). */}
+      <div className="grid grid-cols-3 gap-1">
         {samples.map((f) => (
           <FaceCrop key={f.faceId} face={f} size={120} className="w-full aspect-square rounded-md bg-muted" />
         ))}
@@ -39,19 +40,24 @@ function ClusterCard({ cluster, onOpen, subtitle }: { cluster: IFaceCluster; onO
 }
 
 /**
- * Open-cluster detail: every face starts PRE-SELECTED (reviewing a cluster
- * usually means acting on the whole group — deselect exceptions instead of
- * building the selection up from nothing), wired to the shared BulkBar.
+ * Open-cluster detail, wired to the shared BulkBar. Candidate clusters start
+ * PRE-SELECTED (confirming a found relative as a whole is one click); own-face
+ * clusters start with NOTHING selected (defaultSelectAll=false) — you're
+ * usually hunting a few strays inside your own faces, not confirming the lot.
  */
 function ClusterDetail({
   cluster,
   onBack,
+  nav,
+  defaultSelectAll,
   defaultTargetName,
   defaultTargetId,
   onRejectCluster,
 }: {
   cluster: IFaceCluster;
   onBack: () => void;
+  nav: IReviewNavProps;
+  defaultSelectAll: boolean;
   defaultTargetName?: string;
   defaultTargetId?: string;
   onRejectCluster?: (faceIds: string[]) => void;
@@ -61,11 +67,10 @@ function ClusterDetail({
   const visible = useMemo(() => cluster.faces.filter((f) => !removed.has(f.faceId)), [cluster, removed]);
   const orderedIds = useMemo(() => visible.map((f) => f.faceId), [visible]);
   const selection = useFaceSelection(orderedIds);
-  const { selectMany } = selection;
-  // Opening a cluster pre-selects every face: reviewing a cluster usually
-  // means acting on the whole group, deselecting exceptions.
+  const { selectMany, clear } = selection;
   React.useEffect(() => {
-    selectMany(cluster.faces.map((f) => f.faceId));
+    if (defaultSelectAll) selectMany(cluster.faces.map((f) => f.faceId));
+    else clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cluster.index]);
 
@@ -80,15 +85,18 @@ function ClusterDetail({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Back + Select all/none live on the tab row (#9d/#9e); the selected
+          count now shows only once, in the BulkBar (#9a), and the cluster
+          number is gone (#9b). */}
+      <div className="flex flex-wrap items-center gap-3">
         <Button size="sm" variant="ghost" onClick={onBack}>
           <ArrowLeft size={14} className="mr-1" /> Back to clusters
         </Button>
-        <span className="font-semibold text-sm">
-          Cluster {cluster.index} · {selection.selected.size} selected
-        </span>
-        <Button size="sm" variant="outline" onClick={selection.selectAll}>Select all</Button>
-        <Button size="sm" variant="outline" onClick={selection.clear}>Select none</Button>
+        <ReviewTabs tab={nav.tab} sub={nav.sub} scope={nav.scope} setParams={nav.setParams} showInclude={false} />
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={selection.selectAll}>Select all</Button>
+          <Button size="sm" variant="outline" onClick={selection.clear}>Select none</Button>
+        </div>
       </div>
       <BulkBar
         selectedIds={[...selection.selected]}
@@ -140,8 +148,8 @@ function ClusterDetail({
   );
 }
 
-/** "Tagged faces > Clusters": the person's own faces grouped by similarity. */
-export function OwnClustersView({ personId }: { personId: string }) {
+/** "Tagged > Clusters": the person's own faces grouped by similarity. */
+export function OwnClustersView({ personId, ...nav }: { personId: string } & IReviewNavProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<IFaceCluster | null>(null);
   const query = useQuery({
@@ -157,6 +165,8 @@ export function OwnClustersView({ personId }: { personId: string }) {
     return (
       <ClusterDetail
         cluster={open}
+        nav={nav}
+        defaultSelectAll={false}
         onBack={() => {
           setOpen(null);
           queryClient.invalidateQueries({ queryKey: ["face-review", "clusters", personId] });
@@ -167,10 +177,15 @@ export function OwnClustersView({ personId }: { personId: string }) {
   }
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <ReviewTabs {...nav} />
+        <span className="ml-auto text-sm text-muted-foreground">
+          {clusters.length} cluster{clusters.length === 1 ? "" : "s"}
+          {singletonCount ? ` · ${singletonCount} unclustered face${singletonCount === 1 ? "" : "s"}` : ""}
+        </span>
+      </div>
       <div className="text-sm text-muted-foreground">
-        {clusters.length} cluster{clusters.length === 1 ? "" : "s"}
-        {singletonCount ? ` · ${singletonCount} unclustered face${singletonCount === 1 ? "" : "s"}` : ""}
-        {" — a tight sub-group that isn't this person is a wrongly-merged someone else."}
+        A tight sub-group that isn&apos;t this person is a wrongly-merged someone else.
       </div>
       {!clusters.length ? (
         <div className="py-12 text-center text-muted-foreground">
@@ -199,12 +214,12 @@ export function OwnClustersView({ personId }: { personId: string }) {
 export function CandidateClustersView({
   personId,
   personName,
-  scope,
+  ...nav
 }: {
   personId: string;
   personName: string;
-  scope: IFaceReviewScope;
-}) {
+} & IReviewNavProps) {
+  const { scope } = nav;
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<IFaceCluster | null>(null);
   const [threshold, setThreshold] = useState(0.65);
@@ -229,6 +244,8 @@ export function CandidateClustersView({
     return (
       <ClusterDetail
         cluster={open}
+        nav={nav}
+        defaultSelectAll={true}
         defaultTargetName={personName}
         defaultTargetId={personId}
         onRejectCluster={(ids) => {
@@ -246,6 +263,7 @@ export function CandidateClustersView({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
+        <ReviewTabs {...nav} />
         <label className="text-sm text-muted-foreground" title="How similar two faces must look to land in the same group">
           Similarity {threshold.toFixed(2)}
         </label>

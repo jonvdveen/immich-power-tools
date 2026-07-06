@@ -20,7 +20,7 @@ export default function PersonNameInput({
   value,
   onChange,
   onSubmit,
-  placeholder = "This is actually… (type a name)",
+  placeholder = "This is actually…",
   className,
 }: {
   value: INameValue;

@@ -5,20 +5,14 @@ import { useRouter } from "next/router";
 
 import { CandidateClustersView, OwnClustersView } from "@/components/face-review/ClusterViews";
 import FindMoreFacesView from "@/components/face-review/FindMoreFacesView";
+import { IPrimaryTab, ISubTab } from "@/components/face-review/ReviewTabs";
 import TaggedFacesView from "@/components/face-review/TaggedFacesView";
 import PageLayout from "@/components/layouts/PageLayout";
 import Header from "@/components/shared/Header";
 import Loader from "@/components/ui/loader";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PERSON_THUBNAIL_PATH } from "@/config/routes";
 import { getFaceReviewPersonInfo } from "@/handlers/api/faceReview.handler";
 import { IFaceReviewScope } from "@/types/faceReview";
-
-type IPrimaryTab = "tagged" | "find-more";
-type ISubTab = "faces" | "clusters";
 
 /**
  * Face Review page: 2 primary tabs (which face set) x 2 sub-tabs (which lens
@@ -79,42 +73,34 @@ export default function FaceReviewPersonPage() {
         }
       />
       <div className="flex flex-col gap-4 px-4 pb-8">
-        <div className="flex flex-wrap items-center gap-3">
-          <Tabs value={tab} onValueChange={(v) => setParams({ tab: v, sub: "faces" })}>
-            <TabsList>
-              <TabsTrigger value="tagged">Tagged faces</TabsTrigger>
-              <TabsTrigger value="find-more">Find more</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Tabs value={sub} onValueChange={(v) => setParams({ sub: v })}>
-            <TabsList>
-              <TabsTrigger value="faces">Faces</TabsTrigger>
-              <TabsTrigger value="clusters">Clusters</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          {tab === "find-more" && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-muted-foreground">Include</label>
-              <Select value={scope} onValueChange={(v) => setParams({ scope: v })}>
-                <SelectTrigger className="w-48 h-8"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unnamed">Unnamed faces only</SelectItem>
-                  <SelectItem value="named">Already-named faces</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
-
+        {/* Each view renders the tab bar (via <ReviewTabs/>) inline with its
+            own controls, so the whole header sits on one row. */}
         {tab === "tagged" && sub === "faces" && (
-          <TaggedFacesView personId={personId} personName={person?.name || ""} />
+          <TaggedFacesView
+            personId={personId}
+            personName={person?.name || ""}
+            tab={tab} sub={sub} scope={scope} setParams={setParams}
+          />
         )}
-        {tab === "tagged" && sub === "clusters" && <OwnClustersView personId={personId} />}
+        {tab === "tagged" && sub === "clusters" && (
+          <OwnClustersView
+            personId={personId}
+            tab={tab} sub={sub} scope={scope} setParams={setParams}
+          />
+        )}
         {tab === "find-more" && sub === "faces" && (
-          <FindMoreFacesView personId={personId} personName={person?.name || ""} scope={scope} />
+          <FindMoreFacesView
+            personId={personId}
+            personName={person?.name || ""}
+            tab={tab} sub={sub} scope={scope} setParams={setParams}
+          />
         )}
         {tab === "find-more" && sub === "clusters" && (
-          <CandidateClustersView personId={personId} personName={person?.name || ""} scope={scope} />
+          <CandidateClustersView
+            personId={personId}
+            personName={person?.name || ""}
+            tab={tab} sub={sub} scope={scope} setParams={setParams}
+          />
         )}
       </div>
     </PageLayout>
