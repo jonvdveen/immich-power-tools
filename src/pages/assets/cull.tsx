@@ -2,11 +2,14 @@ import "react-photo-album/rows.css";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Archive, ChevronLeft, ChevronRight, Flag, Loader2, Star, StarOff, Trash2, X,
+  Archive, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Flag, Heart, Info,
+  Loader2, Star, StarOff, Trash2, X,
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
 
+import ExifPanel from "@/components/cull/ExifPanel";
+import HelpGuide from "@/components/cull/HelpGuide";
 import PageLayout from "@/components/layouts/PageLayout";
 import type { AssetPhoto } from "@/components/shared/AssetGrid";
 import FloatingBar from "@/components/shared/FloatingBar";
@@ -19,11 +22,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
+import { useConfig } from "@/contexts/ConfigContext";
 import { listAlbums } from "@/handlers/api/album.handler";
 import { deleteAssets, updateAssets } from "@/handlers/api/asset.handler";
 import {
-  addTagToAssets, getOrCreateTag, ICullAsset, ICullFlagFilter, ICullRatingFilter,
-  listCullAssets, PICK_TAG_NAME, REJECT_TAG_NAME, removeTagFromAssets,
+  addTagToAssets, ensureCullTags, ICullAsset, ICullFlagFilter, ICullRatingFilter,
+  ICullReviewedFilter, listCullAssets, removeTagFromAssets,
 } from "@/handlers/api/cull.handler";
 import { ASSET_PREVIEW_PATH, ASSET_THUMBNAIL_PATH, ASSET_VIDEO_PATH } from "@/config/routes";
 import { IAlbum } from "@/types/album";
@@ -82,7 +86,11 @@ export default function CullPhotosPage() {
   const [endDate, setEndDate] = useState(fmtLocalDate(new Date()));
   const [ratingFilter, setRatingFilter] = useState<ICullRatingFilter>("any");
   const [flagFilter, setFlagFilter] = useState<ICullFlagFilter>("any");
+  // Defaults to "unreviewed" (unlike the other filters) so the queue always
+  // opens on wherever you left off reviewing.
+  const [reviewedFilter, setReviewedFilter] = useState<ICullReviewedFilter>("unreviewed");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const { exImmichUrl } = useConfig();
 
   // --- data ---
   const [assets, setAssets] = useState<ICullAsset[]>([]);
@@ -97,16 +105,22 @@ export default function CullPhotosPage() {
   const [lastSelectedIndex, setLastSelectedIndex] = useState(-1);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showExif, setShowExif] = useState(false);
 
-  const tagIdsRef = useRef<{ pick?: string; reject?: string }>({});
+  const tagIdsRef = useRef<{ pick?: string; reject?: string; reviewed?: string }>({});
   const prefetchedRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
-  // Resolve (create-or-get) both flag tags once so keypresses never wait.
+  // Resolve (create-or-get) all three flag tags once so keypresses never wait.
   useEffect(() => {
-    Promise.all([getOrCreateTag(PICK_TAG_NAME), getOrCreateTag(REJECT_TAG_NAME)])
-      .then(([p, r]) => { tagIdsRef.current = { pick: p.id, reject: r.id }; })
-      .catch(() => toast({ title: "Error", description: "Couldn't set up Pick/Reject tags.", variant: "destructive" }));
+    ensureCullTags()
+      .then((ids) => { tagIdsRef.current = ids; })
+      .catch(() => toast({ title: "Error", description: "Couldn't set up Pick/Reject/Reviewed tags.", variant: "destructive" }));
   }, []);
+
+  // Closing the viewer clears the EXIF panel so reopening it starts fresh.
+  useEffect(() => {
+    if (viewerIndex === null) setShowExif(false);
+  }, [viewerIndex]);
 
   useEffect(() => {
     listAlbums().then(setAlbums).catch(() => {
@@ -129,6 +143,7 @@ export default function CullPhotosPage() {
           ...sourceParams,
           rating: ratingFilter,
           flag: flagFilter,
+          reviewed: reviewedFilter,
           sortOrder,
           page,
           limit: PAGE_SIZE,
@@ -143,7 +158,7 @@ export default function CullPhotosPage() {
         reset ? setLoading(false) : setLoadingMore(false);
       }
     },
-    [sourceParams, ratingFilter, flagFilter, sortOrder]
+    [sourceParams, ratingFilter, flagFilter, reviewedFilter, sortOrder]
   );
 
   // Any source/filter change restarts from page 1 (server does the filtering).
@@ -238,6 +253,36 @@ export default function CullPhotosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assets]);
 
+  const reviewAssets = useCallback(async (ids: string[], reviewed: boolean) => {
+    const { reviewed: reviewedTagId } = tagIdsRef.current;
+    if (!reviewedTagId) {
+      toast({ title: "Hang on", description: "Still preparing the Reviewed tag…" });
+      return;
+    }
+    const snap = snapshot(ids);
+    patchLocal(ids, { reviewed });
+    try {
+      if (reviewed) await addTagToAssets(reviewedTagId, ids);
+      else await removeTagFromAssets(reviewedTagId, ids);
+    } catch {
+      restore(snap);
+      toast({ title: "Error", description: "Failed to update reviewed status.", variant: "destructive" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assets]);
+
+  const favoriteAssets = useCallback(async (ids: string[], isFavorite: boolean) => {
+    const snap = snapshot(ids);
+    patchLocal(ids, { isFavorite });
+    try {
+      await updateAssets({ ids, isFavorite });
+    } catch {
+      restore(snap);
+      toast({ title: "Error", description: "Failed to update favorite.", variant: "destructive" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assets]);
+
   /** Drop ids from the loaded list (after archive/trash), fixing selection + viewer. */
   const removeFromList = (ids: string[]) => {
     const idSet = new Set(ids);
@@ -305,6 +350,7 @@ export default function CullPhotosPage() {
       if (viewerIndex !== null) {
         if (e.key === "ArrowRight") { e.preventDefault(); setViewerIndex((i) => Math.min((i ?? 0) + 1, assets.length - 1)); return; }
         if (e.key === "ArrowLeft") { e.preventDefault(); setViewerIndex((i) => Math.max((i ?? 0) - 1, 0)); return; }
+        if (e.key === "i" || e.key === "I") { e.preventDefault(); setShowExif((v) => !v); return; }
       }
       if (!targetIds.length) return;
 
@@ -329,11 +375,19 @@ export default function CullPhotosPage() {
       } else if (e.key === "u" || e.key === "U") {
         e.preventDefault();
         flagAssets(targetIds, null);
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        // Toggle is only unambiguous for the single open photo; a bulk grid
+        // selection just gets marked reviewed (same convention as P/X below).
+        reviewAssets(targetIds, !(viewerAsset && viewerAsset.reviewed));
+      } else if (e.key === "f" || e.key === "F" || e.key === ".") {
+        e.preventDefault();
+        favoriteAssets(targetIds, !(viewerAsset && viewerAsset.isFavorite));
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [viewerAsset, viewerIndex, selectedIds, assets.length, rateAssets, flagAssets]);
+  }, [viewerAsset, viewerIndex, selectedIds, assets.length, rateAssets, flagAssets, reviewAssets, favoriteAssets]);
 
   // --- grid photos ---
   const images: AssetPhoto[] = useMemo(
@@ -399,9 +453,12 @@ export default function CullPhotosPage() {
       <Header
         leftComponent="Cull Photos"
         rightComponent={
-          <span className="text-xs text-muted-foreground">
-            1–5 rate · P pick · X reject · U unflag · ←/→ navigate · Esc close/clear
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              1–5 rate · P pick · X reject · U unflag · R reviewed · F favorite · I info · ←/→ navigate · Esc close/clear
+            </span>
+            <HelpGuide />
+          </div>
         }
       />
       <div className="flex flex-col gap-3 p-4">
@@ -463,6 +520,15 @@ export default function CullPhotosPage() {
               <SelectItem value="unflagged">Unflagged</SelectItem>
             </SelectContent>
           </Select>
+          <label className="text-sm text-muted-foreground">Reviewed</label>
+          <Select value={reviewedFilter} onValueChange={(v) => setReviewedFilter(v as ICullReviewedFilter)}>
+            <SelectTrigger className="w-36 h-8"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">Any</SelectItem>
+              <SelectItem value="unreviewed">Unreviewed</SelectItem>
+              <SelectItem value="reviewed">Reviewed</SelectItem>
+            </SelectContent>
+          </Select>
           <label className="text-sm text-muted-foreground">Sort</label>
           <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "asc" | "desc")}>
             <SelectTrigger className="w-28 h-8"><SelectValue /></SelectTrigger>
@@ -501,7 +567,7 @@ export default function CullPhotosPage() {
                 image: renderImage,
                 extras: (_, { photo }) => {
                   const a = assets.find((x) => x.id === photo.id);
-                  if (!a || (!a.rating && !a.picked && !a.rejected)) return null;
+                  if (!a || (!a.rating && !a.picked && !a.rejected && !a.reviewed && !a.isFavorite)) return null;
                   return (
                     <div className="pointer-events-none absolute bottom-1 left-1 flex items-center gap-1">
                       {!!a.rating && (
@@ -514,6 +580,14 @@ export default function CullPhotosPage() {
                       )}
                       {a.rejected && (
                         <span className="rounded bg-red-600/90 px-1 py-0.5 text-[10px] font-semibold text-white">✕</span>
+                      )}
+                      {a.reviewed && (
+                        <span className="rounded bg-sky-600/90 px-1 py-0.5 text-[10px] font-semibold text-white">✓</span>
+                      )}
+                      {a.isFavorite && (
+                        <span className="rounded bg-black/60 p-0.5">
+                          <Heart size={10} className="fill-pink-500 text-pink-500" />
+                        </span>
                       )}
                     </div>
                   );
@@ -548,6 +622,18 @@ export default function CullPhotosPage() {
           <Button size="sm" variant="ghost" title="Unflag (U)" onClick={() => flagAssets(selectedIds, null)}>
             <Flag size={15} className="text-muted-foreground" />
           </Button>
+          <Button size="sm" variant="ghost" title="Mark Reviewed (R)" onClick={() => reviewAssets(selectedIds, true)}>
+            <CheckCircle2 size={15} className="text-sky-500" />
+          </Button>
+          <Button size="sm" variant="ghost" title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
+            <CheckCircle2 size={15} className="text-muted-foreground" />
+          </Button>
+          <Button size="sm" variant="ghost" title="Favorite (F)" onClick={() => favoriteAssets(selectedIds, true)}>
+            <Heart size={15} className="fill-pink-500 text-pink-500" />
+          </Button>
+          <Button size="sm" variant="ghost" title="Unfavorite" onClick={() => favoriteAssets(selectedIds, false)}>
+            <Heart size={15} className="text-muted-foreground" />
+          </Button>
           <Button size="sm" variant="ghost" title="Archive (hide from timeline, reversible)" disabled={busy} onClick={() => archiveAssets(selectedIds)}>
             <Archive size={15} />
           </Button>
@@ -578,10 +664,30 @@ export default function CullPhotosPage() {
             <span className="text-xs text-white/50">
               {viewerAsset.localDateTime ? String(viewerAsset.localDateTime).slice(0, 10) : ""}
             </span>
-            <button className="ml-auto rounded p-1 hover:bg-white/10" title="Close (Esc)" onClick={() => setViewerIndex(null)}>
-              <X size={20} />
-            </button>
+            <div className="ml-auto flex items-center gap-1">
+              <a
+                href={`${exImmichUrl}/photos/${viewerAsset.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded p-1 hover:bg-white/10"
+                title="Open in Immich"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink size={18} />
+              </a>
+              <button
+                className={`rounded p-1 hover:bg-white/10 ${showExif ? "bg-white/10" : ""}`}
+                title="Info (I)"
+                onClick={(e) => { e.stopPropagation(); setShowExif((v) => !v); }}
+              >
+                <Info size={18} />
+              </button>
+              <button className="rounded p-1 hover:bg-white/10" title="Close (Esc)" onClick={() => setViewerIndex(null)}>
+                <X size={20} />
+              </button>
+            </div>
           </div>
+          {showExif && <ExifPanel assetId={viewerAsset.id} />}
 
           {/* image — as much screen as possible */}
           <div className="flex min-h-0 flex-1 items-center justify-center" onClick={() => setViewerIndex(null)}>
@@ -640,6 +746,21 @@ export default function CullPhotosPage() {
               onClick={() => flagAssets([viewerAsset.id], viewerAsset.rejected ? null : "reject")}
             >
               <Flag size={15} /> Reject
+            </button>
+            <button
+              title="Reviewed (R) — click again to unmark"
+              className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.reviewed ? "bg-sky-600 text-white" : "text-white/60 hover:bg-white/10"}`}
+              onClick={() => reviewAssets([viewerAsset.id], !viewerAsset.reviewed)}
+            >
+              <CheckCircle2 size={15} /> Reviewed
+            </button>
+            <span className="h-6 w-px bg-white/20" />
+            <button
+              title="Favorite (F) — click again to unfavorite"
+              className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.isFavorite ? "text-pink-500" : "text-white/60 hover:bg-white/10"}`}
+              onClick={() => favoriteAssets([viewerAsset.id], !viewerAsset.isFavorite)}
+            >
+              <Heart size={15} className={viewerAsset.isFavorite ? "fill-pink-500" : ""} /> Favorite
             </button>
             <span className="h-6 w-px bg-white/20" />
             <button

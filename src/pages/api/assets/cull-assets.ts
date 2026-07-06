@@ -5,7 +5,7 @@ import { db } from "@/config/db";
 import { getCurrentUser } from "@/handlers/serverUtils/user.utils";
 import { isFlipped } from "@/helpers/asset.helper";
 import { assets, exif, tags } from "@/schema";
-import { PICK_TAG_NAME, REJECT_TAG_NAME } from "@/config/constants/cull";
+import { CULL_TAG_NAMESPACE, PICK_TAG_NAME, REJECT_TAG_NAME, REVIEWED_TAG_NAME } from "@/config/constants/cull";
 
 /**
  * Paginated asset feed for the Cull tool.
@@ -15,14 +15,16 @@ import { PICK_TAG_NAME, REJECT_TAG_NAME } from "@/config/constants/cull";
  * localDateTime like the album/potential-albums routes).
  *
  * Filters: minimum star rating or "unrated" (exif.rating — Immich's native
- * field; 0 is treated as unrated, it's invalid as a rating since v3), and
- * flag state (Picked/Rejected tags — see cull.handler.ts for why flags are
- * tags and not the rating's -1 value).
+ * field; 0 is treated as unrated, it's invalid as a rating since v3), flag
+ * state (Picked/Rejected tags — see cull.handler.ts for why flags are tags
+ * and not the rating's -1 value), and reviewed state (a third, independent
+ * tag — not tied to pick/reject).
  *
  * Server-side pagination is the point: the previous client fetched EVERY
  * page of an album before showing photo #1, which is exactly the slow-large-
- * album problem. Each row also carries rating + picked/rejected so the UI
- * can render true persisted state in overlays/badges without extra calls.
+ * album problem. Each row also carries rating + picked/rejected/reviewed/
+ * favorite so the UI can render true persisted state in overlays/badges
+ * without extra calls.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const currentUser = await getCurrentUser(req);
@@ -34,6 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     endDate,
     rating = "any", // "any" | "unrated" | "1".."5" (meaning >= N)
     flag = "any", // "any" | "picked" | "rejected" | "unflagged"
+    reviewed = "any", // "any" | "reviewed" | "unreviewed"
     sortOrder = "desc",
     page = "1",
     limit = "200",
@@ -42,19 +45,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const limitNum = Math.min(parseInt(limit, 10) || 200, 500);
   const pageNum = Math.max(parseInt(page, 10) || 1, 1);
 
-  // Resolve the user's Pick/Reject tag ids once (they may not exist yet if
-  // nothing has ever been flagged — that's fine, EXISTS just goes false).
+  // Resolve the user's Pick/Reject/Reviewed tag ids once (they may not exist
+  // yet if nothing has ever been flagged — that's fine, EXISTS just goes
+  // false). These are nested under CULL_TAG_NAMESPACE, so match on full value.
+  const pickPath = `${CULL_TAG_NAMESPACE}/${PICK_TAG_NAME}`;
+  const rejectPath = `${CULL_TAG_NAMESPACE}/${REJECT_TAG_NAME}`;
+  const reviewedPath = `${CULL_TAG_NAMESPACE}/${REVIEWED_TAG_NAME}`;
   const tagRows = await db
     .select({ id: tags.id, value: tags.value })
     .from(tags)
-    .where(and(eq(tags.userId, currentUser.id), sql`${tags.value} IN (${PICK_TAG_NAME}, ${REJECT_TAG_NAME})`));
-  const pickTagId = tagRows.find((t) => t.value === PICK_TAG_NAME)?.id ?? null;
-  const rejectTagId = tagRows.find((t) => t.value === REJECT_TAG_NAME)?.id ?? null;
+    .where(and(eq(tags.userId, currentUser.id), sql`${tags.value} IN (${pickPath}, ${rejectPath}, ${reviewedPath})`));
+  const pickTagId = tagRows.find((t) => t.value === pickPath)?.id ?? null;
+  const rejectTagId = tagRows.find((t) => t.value === rejectPath)?.id ?? null;
+  const reviewedTagId = tagRows.find((t) => t.value === reviewedPath)?.id ?? null;
 
   const taggedWith = (tagId: string) =>
     sql`EXISTS (SELECT 1 FROM "tag_asset" ta WHERE ta."assetId" = ${assets.id} AND ta."tagId" = ${tagId})`;
   const pickedExpr = pickTagId ? taggedWith(pickTagId) : sql`false`;
   const rejectedExpr = rejectTagId ? taggedWith(rejectTagId) : sql`false`;
+  const reviewedExpr = reviewedTagId ? taggedWith(reviewedTagId) : sql`false`;
 
   const conditions: any[] = [
     eq(assets.ownerId, currentUser.id),
@@ -88,6 +97,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (rejectTagId) conditions.push(sql`NOT ${rejectedExpr}`);
   }
 
+  if (reviewed === "reviewed") conditions.push(reviewedTagId ? reviewedExpr : sql`false`);
+  else if (reviewed === "unreviewed" && reviewedTagId) conditions.push(sql`NOT ${reviewedExpr}`);
+
   const rows = await db
     .select({
       id: assets.id,
@@ -103,6 +115,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       rating: exif.rating,
       picked: sql<boolean>`${pickedExpr}`,
       rejected: sql<boolean>`${rejectedExpr}`,
+      reviewed: sql<boolean>`${reviewedExpr}`,
       total: sql<number>`COUNT(*) OVER()::int`,
     })
     .from(assets)
