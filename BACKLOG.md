@@ -8,21 +8,13 @@ context in project memory (`immich-power-tools-cull.md`,
 
 - **CULL-4**: No upstream PR prep started (mirrors the Face Review PR
   deferral — user wants to be "very very confident and satisfied" first).
-- **CULL-5**: 2026-07-06 batch (deployed to local `:8001`, uncommitted, not
-  interactively verified): Favorite toggle (F/.) with heart badge; Reviewed
-  toggle (R) with a filter dropdown that defaults to Unreviewed (not Any,
-  unlike the other filters — the queue should always open where you left
-  off); EXIF info panel (I key or on-screen button, reuses the existing
-  /api/assets/[id]/detail endpoint AssetInfoPanel already uses); Open in
-  Immich button in the viewer; "?" help guide with a shortcut table and
-  basic culling-workflow tips.
-- Pick/Reject/Reviewed tags renamed 2026-07-06 from flat "Picked"/"Rejected"
-  to nested `ImmichPowerTools_CullandRate/IPT_Picked` etc, to avoid colliding
-  with a tag a household member might create by hand. The old flat tags had
-  zero tagged assets at rename time (verified before switching), so nothing
-  needed migrating — they're harmless orphans, deletable via Tag Manager.
-  The new namespace + all three child tags were created for real (not test
-  data) and verified against the live server during this session.
+- Released in v0.24.0 (2026-07-06): favorites (F/.), Reviewed workflow (R +
+  filter defaulting to Unreviewed), EXIF panel (I), open-in-Immich button,
+  "?" help guide. Flag tags live at
+  `ImmichPowerTools_CullandRate/IPT_{Picked,Rejected,Reviewed}` — renamed
+  from flat "Picked"/"Rejected", which had zero tagged assets at rename time
+  (verified); the old flat tags are harmless orphans, deletable via Tag
+  Manager.
 
 ## Face Review (`/face-review`)
 
@@ -35,26 +27,13 @@ context in project memory (`immich-power-tools-cull.md`,
 
 ## Tag Manager (new tag tree editor, `/tags`)
 
-- **TAG-1**: Deployed to the local `:8001` container 2026-07-06 but
-  UNCOMMITTED and unverified interactively (agent has no logged-in browser
-  session). Backend algorithm (rename/nest/un-nest via recreate + copy +
-  cascade-delete) was validated directly against the live Immich API,
-  including a parent+child subtree case — see lib/tag-manager/move.ts. Also
-  added: per-row "view in Immich" link (`{exImmichUrl}/tags?path=<value>`,
-  reverse-engineered from Immich's own web bundle since it's not in any
-  public API — confirmed via auth-redirect that Immich recognizes the
-  route), a colored Tag icon replacing the plain color-swatch rectangle, and
-  a "?" help dialog covering limitations (rename/nest/un-nest changes tag
-  IDs; this can silently break Workflow conditions, which match by tag ID —
-  see HelpGuide.tsx for full text). UI itself (tree rendering, search, color
-  picker, inline rename, add-child, move popover, new icon/link/help button)
-  still needs a human pass. 2026-07-06: moved the "?"/helper text onto the
-  search row (was on the page Header), and switched from one long vertical
-  list to a responsive grid — one card per root tag (with its nested
-  children inside), to cut down whitespace on wide screens.
-- **TAG-2**: No feature branch — built directly on `local-stack`, uncommitted.
-- **TAG-3**: Not yet in the public GHCR image.
-- Immich v3's tag API can't rename or reparent a tag (verified: its update
-  endpoint only accepts `color`, PATCHing name/parentId 500s from an empty
-  SQL SET clause) — that's why rename/nest/un-nest recreate the tag(s)
-  instead of updating in place, so a moved/renamed tag gets a new id.
+- Released in v0.24.0 (2026-07-06); user has exercised it and reported
+  "mostly very happy". Key implementation notes:
+  - Immich v3's tag API can't rename or reparent a tag (verified: its update
+    endpoint only accepts `color`, PATCHing name/parentId 500s from an empty
+    SQL SET clause) — rename/nest/un-nest recreate the tag(s) via
+    lib/tag-manager/move.ts instead, so a moved/renamed tag gets a NEW id.
+    This can silently break Workflow tag conditions (they match by id) — the
+    "?" help dialog documents it.
+  - Per-row "view in Immich" link uses `{exImmichUrl}/tags?path=<value>`,
+    reverse-engineered from Immich's own web bundle (not in any public API).
