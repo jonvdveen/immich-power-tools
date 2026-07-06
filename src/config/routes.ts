@@ -13,6 +13,10 @@ export const LIST_TAGS_PATH = BASE_API_ENDPOINT + "/tags";
 // /api/immich-proxy/[...path].ts), same pattern as UPDATE_ASSETS_PATH below.
 export const CREATE_OR_GET_TAG_PATH = BASE_PROXY_ENDPOINT + "/tags";
 export const TAG_ASSETS_PATH = (tagId: string) => BASE_PROXY_ENDPOINT + "/tags/" + tagId + "/assets";
+// Single-tag delete/color-update (proxied) and rename/nest/un-nest (this
+// app's own endpoint — see lib/tag-manager/move.ts for why).
+export const TAG_PATH = (tagId: string) => BASE_PROXY_ENDPOINT + "/tags/" + tagId;
+export const MOVE_TAG_PATH = (tagId: string) => BASE_API_ENDPOINT + "/tags/" + tagId + "/move";
 export const SEARCH_PEOPLE_PATH = BASE_PROXY_ENDPOINT + "/search/person";
 export const SIMILAR_FACES_PATH = (id: string) => BASE_API_ENDPOINT + "/people/" + id + "/similar-faces";
 export const PERSON_THUBNAIL_PATH = (id: string) => BASE_PROXY_ENDPOINT + "/thumbnail/" + id;
@@ -52,6 +56,7 @@ export const ASSET_GEO_HEATMAP_PATH = BASE_API_ENDPOINT + "/assets/geo-heatmap";
 export const LIST_EMPTY_VIDEOS_PATH = BASE_API_ENDPOINT + "/assets/empty-videos";
 export const LIST_ORPHAN_ASSETS_PATH = BASE_API_ENDPOINT + "/assets/orphan-finder";
 export const LIST_CULL_ASSETS_PATH = BASE_API_ENDPOINT + "/assets/cull-assets";
+export const ASSET_DETAIL_PATH = (id: string) => BASE_API_ENDPOINT + "/assets/" + id + "/detail";
 
 
 

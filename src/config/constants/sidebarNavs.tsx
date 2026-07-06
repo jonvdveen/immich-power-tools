@@ -1,4 +1,4 @@
-import { Copy, GalleryHorizontal, GalleryVerticalEnd, Image as ImageIcon, MapPin, MapPinX, PackageSearch, Rewind, ScanFace, Search, Settings, Share2, Star, User, Video, Workflow } from "lucide-react";
+import { Copy, GalleryHorizontal, GalleryVerticalEnd, Image as ImageIcon, MapPin, MapPinX, PackageSearch, Rewind, ScanFace, Search, Settings, Share2, Star, Tags, User, Video, Workflow } from "lucide-react";
 
 interface SidebarNav {
   title: string;
@@ -27,6 +27,7 @@ export const sidebarGroups: SidebarGroup[] = [
     items: [
       { title: "Face Review", link: "/face-review", icon: <ScanFace className="h-4 w-4" />, badge: "Beta" },
       { title: "Cull Photos", link: "/assets/cull", icon: <Star className="h-4 w-4" />, badge: "Beta" },
+      { title: "Tag Manager", link: "/tags", icon: <Tags className="h-4 w-4" />, badge: "Beta" },
       { title: "Potential Albums", link: "/albums/potential-albums", icon: <GalleryVerticalEnd className="h-4 w-4" /> },
       { title: "Missing Locations", link: "/assets/missing-locations", icon: <MapPinX className="h-4 w-4" /> },
       { title: "Empty Videos", link: "/assets/empty-videos", icon: <Video className="h-4 w-4" /> },
