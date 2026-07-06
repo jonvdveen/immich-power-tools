@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { CheckCircle2, Loader2, ScanFace, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -44,9 +45,19 @@ type IScan =
  * people browser (Manage People already exists) — this grid is ordered by
  * face count because more faces = more room for misassignments.
  */
+const FILTER_VALUES = FILTERS.map((f) => f.value);
+
 export default function FaceReviewIndexPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState("named");
+  // Kept in the URL (not plain useState) so a refresh, or navigating back
+  // from a person's review page, lands on the same filter instead of always
+  // resetting to "Named people".
+  const rawFilter = router.query.filter;
+  const filter = typeof rawFilter === "string" && FILTER_VALUES.includes(rawFilter) ? rawFilter : "named";
+  const setFilter = (v: string) => {
+    router.push({ pathname: router.pathname, query: { ...router.query, filter: v } }, undefined, { shallow: true });
+  };
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<null | "scan" | "clear">(null);
   const [scan, setScan] = useState<IScan>({ phase: "idle" });
@@ -262,7 +273,7 @@ export default function FaceReviewIndexPage() {
             {people.map((p) => (
               <Link
                 key={p.id}
-                href={`/face-review/${p.id}`}
+                href={{ pathname: `/face-review/${p.id}`, query: { returnFilter: filter } }}
                 className="flex flex-col items-center gap-2 rounded-xl border bg-card p-4 transition-colors hover:border-primary"
               >
                 <Image

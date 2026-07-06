@@ -22,7 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const target = await resolveTarget(gate.user, gate.ownerId, req.body);
-    const { done, failed } = await reassignFaces(gate.user, faceIds, target.id);
+    const { done, failed } = await reassignFaces(gate.user, faceIds, target.id, gate.ownerId);
     return res.status(200).json({ done, failed, personId: target.id });
   } catch (error: any) {
     res.status(400).json({ error: error?.message });

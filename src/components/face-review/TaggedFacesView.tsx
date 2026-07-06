@@ -35,7 +35,8 @@ export default function TaggedFacesView({
   sub,
   scope,
   setParams,
-}: { personId: string; personName: string } & IReviewNavProps) {
+  returnFilter,
+}: { personId: string; personName: string; returnFilter?: string } & IReviewNavProps) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
@@ -88,9 +89,12 @@ export default function TaggedFacesView({
     if (next.size >= (query.data?.faces.length ?? 0)) refetchPage();
   };
 
-  const singleAction = async (face: IFaceReviewFace, kind: "assign" | "stranger" | "hide") => {
+  const singleAction = async (face: IFaceReviewFace, kind: "assign" | "stranger" | "hide", override?: INameValue) => {
     if (menuBusy) return;
-    if (kind === "assign" && !menuTarget.personId && !menuTarget.name.trim()) {
+    // A dropdown pick made this same keystroke (Enter) arrives via `override`
+    // — `menuTarget` state from it hasn't landed yet when this runs.
+    const t = override ?? menuTarget;
+    if (kind === "assign" && !t.personId && !t.name.trim()) {
       toast.error("Type a name first");
       return;
     }
@@ -99,7 +103,7 @@ export default function TaggedFacesView({
       if (kind === "assign") {
         await reassignFaces({
           faceIds: [face.faceId],
-          ...(menuTarget.personId ? { personId: menuTarget.personId } : { name: menuTarget.name.trim() }),
+          ...(t.personId ? { personId: t.personId } : { name: t.name.trim() }),
         });
         afterWrite([face.faceId], "Reassigned");
         setMenuTarget({ name: "" });
@@ -117,9 +121,12 @@ export default function TaggedFacesView({
     }
   };
 
-  const wholePerson = async (kind: "reassign" | "stranger") => {
+  const wholePerson = async (kind: "reassign" | "stranger", override?: INameValue) => {
     if (globalBusy) return;
-    if (kind === "reassign" && !globalTarget.personId && !globalTarget.name.trim()) {
+    // A dropdown pick made this same keystroke (Enter) arrives via `override`
+    // — `globalTarget` state from it hasn't landed yet when this runs.
+    const t = override ?? globalTarget;
+    if (kind === "reassign" && !t.personId && !t.name.trim()) {
       toast.error("Type a name first");
       return;
     }
@@ -127,9 +134,9 @@ export default function TaggedFacesView({
     setGlobalBusy(true);
     try {
       if (kind === "reassign") {
-        const body = globalTarget.personId
-          ? { personId: globalTarget.personId }
-          : { name: globalTarget.name.trim() };
+        const body = t.personId
+          ? { personId: t.personId }
+          : { name: t.name.trim() };
         try {
           await reassignAll(personId, body);
         } catch (e: any) {
@@ -139,7 +146,11 @@ export default function TaggedFacesView({
           } else throw e;
         }
         toast.success("Merged. This person no longer exists on their own.");
-        setTimeout(() => (window.location.href = "/face-review"), 900);
+        // Preserve whatever list filter the user came from (e.g. "unnamed
+        // only") — this used to hardcode the default-filter URL, silently
+        // dropping the user back into "Named people" mid-review.
+        const backHref = returnFilter ? `/face-review?filter=${encodeURIComponent(returnFilter)}` : "/face-review";
+        setTimeout(() => (window.location.href = backHref), 900);
       } else {
         const res = await strangerAll(personId);
         toast.success(`Renamed to ${res.name}`);
@@ -219,7 +230,7 @@ export default function TaggedFacesView({
       {globalOpen && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3">
           <span className="text-sm font-semibold text-muted-foreground">Whole person:</span>
-          <PersonNameInput value={globalTarget} onChange={setGlobalTarget} onSubmit={() => wholePerson("reassign")} />
+          <PersonNameInput value={globalTarget} onChange={setGlobalTarget} onSubmit={(v) => wholePerson("reassign", v)} />
           <Button size="sm" disabled={globalBusy} onClick={() => wholePerson("reassign")}>
             {globalBusy && <Loader2 className="mr-1 h-3 w-3 animate-spin" />} Reassign all
           </Button>
@@ -283,7 +294,7 @@ export default function TaggedFacesView({
                       <PersonNameInput
                         value={menuTarget}
                         onChange={setMenuTarget}
-                        onSubmit={() => singleAction(face, "assign")}
+                        onSubmit={(v) => singleAction(face, "assign", v)}
                         className="min-w-0"
                       />
                       <Button size="sm" className="h-7 text-xs" disabled={menuBusy} onClick={() => singleAction(face, "assign")}>

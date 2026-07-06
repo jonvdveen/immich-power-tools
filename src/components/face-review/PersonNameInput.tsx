@@ -25,7 +25,10 @@ export default function PersonNameInput({
 }: {
   value: INameValue;
   onChange: (v: INameValue) => void;
-  onSubmit?: () => void;
+  /** Receives the value actually being submitted — a dropdown pick made this
+   * same keystroke hasn't reached the caller's state yet, so callers must
+   * use this argument rather than re-reading their own (stale) state. */
+  onSubmit?: (submitted: INameValue) => void;
   placeholder?: string;
   className?: string;
 }) {
@@ -75,8 +78,15 @@ export default function PersonNameInput({
             setActiveIdx((i) => Math.max(0, i - 1));
           } else if (e.key === "Enter") {
             e.preventDefault();
-            if (open && rows[activeIdx]) pick(rows[activeIdx]);
-            onSubmit?.();
+            if (open && rows[activeIdx]) {
+              const row = rows[activeIdx];
+              const picked: INameValue = { personId: row.id, name: row.name };
+              onChange(picked);
+              setOpen(false);
+              onSubmit?.(picked);
+            } else {
+              onSubmit?.(value);
+            }
           } else if (e.key === "Escape") {
             setOpen(false);
           }

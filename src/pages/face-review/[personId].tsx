@@ -26,6 +26,9 @@ export default function FaceReviewPersonPage() {
   const tab = (router.query.tab as IPrimaryTab) || "tagged";
   const sub = (router.query.sub as ISubTab) || "faces";
   const scope: IFaceReviewScope = router.query.scope === "named" ? "named" : "unnamed";
+  // Which list filter the user came from on the index page, so a whole-
+  // person merge can send them back to it instead of the default filter.
+  const returnFilter = typeof router.query.returnFilter === "string" ? router.query.returnFilter : undefined;
 
   const info = useQuery({
     queryKey: ["face-review", "info", personId],
@@ -64,6 +67,7 @@ export default function FaceReviewPersonPage() {
               width={32}
               height={32}
               className="rounded-full"
+              unoptimized
             />
             <span className="font-medium">Reviewing: {person?.name || "(unnamed)"}</span>
             <span className="text-sm text-muted-foreground">
@@ -80,6 +84,7 @@ export default function FaceReviewPersonPage() {
             personId={personId}
             personName={person?.name || ""}
             tab={tab} sub={sub} scope={scope} setParams={setParams}
+            returnFilter={returnFilter}
           />
         )}
         {tab === "tagged" && sub === "clusters" && (

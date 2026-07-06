@@ -31,9 +31,12 @@ export default function BulkBar({
   const [target, setTarget] = useState<INameValue>(defaultTarget ?? { name: "" });
   const [busy, setBusy] = useState<null | "assign" | "stranger">(null);
 
-  const run = async (kind: "assign" | "stranger") => {
+  const run = async (kind: "assign" | "stranger", override?: INameValue) => {
     if (busy || !selectedIds.length) return;
-    if (kind === "assign" && !target.personId && !target.name.trim()) {
+    // A dropdown pick made this same keystroke (Enter) arrives via `override`
+    // — `target` state from it hasn't landed yet when this runs.
+    const t = override ?? target;
+    if (kind === "assign" && !t.personId && !t.name.trim()) {
       toast.error("Type a name first");
       return;
     }
@@ -42,7 +45,7 @@ export default function BulkBar({
       if (kind === "assign") {
         const res = await reassignFaces({
           faceIds: selectedIds,
-          ...(target.personId ? { personId: target.personId } : { name: target.name.trim() }),
+          ...(t.personId ? { personId: t.personId } : { name: t.name.trim() }),
         });
         onDone(
           selectedIds,
@@ -71,7 +74,7 @@ export default function BulkBar({
         {selectedIds.length} selected
       </span>
       {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-      <PersonNameInput value={target} onChange={setTarget} onSubmit={() => run("assign")} />
+      <PersonNameInput value={target} onChange={setTarget} onSubmit={(v) => run("assign", v)} />
       <Button size="sm" disabled={!!busy || !selectedIds.length} onClick={() => run("assign")}>
         {busy === "assign" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
         Assign name

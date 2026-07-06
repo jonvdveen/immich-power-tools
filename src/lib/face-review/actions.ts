@@ -4,7 +4,7 @@
  * requesting user's credentials; the DB is only read here (name lookup).
  */
 import { createPerson, reassignFace } from "@/lib/face-review/immich";
-import { findPersonByName, personOwnedBy } from "@/lib/face-review/queries";
+import { deleteEmptyPeople, findPersonByName, personOwnedBy } from "@/lib/face-review/queries";
 
 type ImmichUser = { isUsingAPIKey?: boolean; accessToken?: string };
 
@@ -45,11 +45,23 @@ export async function resolveTarget(
   return resolveOrCreatePerson(user, ownerId, body.name || "");
 }
 
-/** Reassign faces one by one (no reliable bulk endpoint), tallying failures. */
+/**
+ * Reassign faces one by one (no reliable bulk endpoint), tallying failures.
+ *
+ * Immich leaves the vacated source person behind even at zero faces — it
+ * never auto-deletes a person record just because its last face moved away
+ * (confirmed against a live v3 instance: reassigning a single-face person's
+ * only photo elsewhere leaves a 0-face person record sitting in "Unnamed").
+ * ownerId, when given, sweeps those empty husks after the batch — the same
+ * owner-scoped query "Delete empty people" already runs manually, just
+ * folded into the normal reassign/stranger flow so a single-face person
+ * doesn't need a separate manual cleanup click every time.
+ */
 export async function reassignFaces(
   user: ImmichUser,
   faceIds: string[],
-  targetPersonId: string
+  targetPersonId: string,
+  ownerId?: string
 ): Promise<{ done: number; failed: number }> {
   let done = 0, failed = 0;
   for (const faceId of faceIds) {
@@ -60,6 +72,7 @@ export async function reassignFaces(
       failed++;
     }
   }
+  if (done > 0 && ownerId) await deleteEmptyPeople(ownerId).catch(() => {});
   return { done, failed };
 }
 

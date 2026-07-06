@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const name = strangerName();
     const person = await createPerson(gate.user, name);
-    const { done, failed } = await reassignFaces(gate.user, faceIds, person.id);
+    const { done, failed } = await reassignFaces(gate.user, faceIds, person.id, gate.ownerId);
     return res.status(200).json({ done, failed, personId: person.id, name });
   } catch (error: any) {
     res.status(400).json({ error: error?.message });
