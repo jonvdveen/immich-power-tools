@@ -70,3 +70,15 @@ context in project memory (`immich-power-tools-cull.md`,
     "?" help dialog documents it.
   - Per-row "view in Immich" link uses `{exImmichUrl}/tags?path=<value>`,
     reverse-engineered from Immich's own web bundle (not in any public API).
+- Released in v0.24.2 (2026-07-07): tag names were getting cut off — the
+  name span had no `min-w-0`, so Tailwind's `truncate` never actually
+  engaged (flex items don't shrink below content size by default). Fixed,
+  and used the freed-up room to declutter: add-sub-tag/move/delete now live
+  behind a single "⋮" `DropdownMenu`, with the photo-count badge moved
+  beside it doubling as the "view in Immich" link (the row's old dedicated
+  button for that, removed as redundant). "Move to…" moved from a floating
+  `Popover` to an inline search box (same slot as "add sub-tag") — nesting
+  it inside the new dropdown would have raced the two Radix portals'
+  open/close state. Delete's confirm dialog opens via the existing
+  `AlertDialog` ref-imperative pattern (`PersonItem.tsx` precedent) rather
+  than as a visible nested trigger, for the same reason.

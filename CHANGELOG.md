@@ -7,6 +7,16 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.24.2 — 2026-07-07
+
+- **Fixed:** long tag names in Tag Manager were getting cut off way more
+  than they needed to be.
+- **Changed:** the row buttons (add sub-tag, move, delete) are now tucked
+  behind a single "⋮" menu on the right instead of four separate buttons,
+  and the photo count moved next to it — doubling as a link straight to
+  that tag in Immich. That frees up the room the tag name needed to
+  actually be readable.
+
 ## v0.24.1 — 2026-07-07
 
 - **Fixed:** naming someone new by merging their photos into a fresh name
