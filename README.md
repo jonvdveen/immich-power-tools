@@ -1,5 +1,15 @@
 # ![Logo](./public/favicon-32x32.png) Immich Power Tools
 
+> [!IMPORTANT]
+> **This is jonvdveen's personal fork**, with extra features not in the
+> upstream project: **Face Review** (fix face-recognition mistakes in bulk),
+> **Rate & Cull** (Lightroom-style photo review/rating/culling), and **Tag
+> Manager** (browse/rename/nest your Immich tags), plus several bug fixes.
+> If you got a link to this repo from a friend, **use this fork's image**
+> (`ghcr.io/jonvdveen/immich-power-tools:latest`), not the upstream one —
+> see [GETTING_STARTED.md](./GETTING_STARTED.md) for the short version.
+> Everything below this point is the original upstream README.
+
 A unofficial immich client to provide better tools to organize and manage your immich account. Building it to speed up your workflows in Immich to organize your people and albums.
 
 > [!IMPORTANT]
@@ -44,7 +54,7 @@ services:
   # Other services...
   power-tools:
     container_name: immich_power_tools
-    image: ghcr.io/immich-power-tools/immich-power-tools:latest
+    image: ghcr.io/jonvdveen/immich-power-tools:latest
     volumes:
       - immich-power-tools-data:/app/data
     ports:
@@ -83,7 +93,7 @@ If you're using portainer, run the docker using `docker run` and add the power t
 
 ```bash
 # Run the power tools from docker 
-docker run -d --name immich_power_tools -p 8001:3000 -v immich-power-tools-data:/app/data --env-file .env ghcr.io/immich-power-tools/immich-power-tools:latest
+docker run -d --name immich_power_tools -p 8001:3000 -v immich-power-tools-data:/app/data --env-file .env ghcr.io/jonvdveen/immich-power-tools:latest
 
 # Add Power tools to the same network as immich
 docker network connect immich_default immich_power_tools
