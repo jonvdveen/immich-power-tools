@@ -48,6 +48,11 @@ export function updatePersonName(user: ImmichUser, personId: string, name: strin
   return immich(user, "PUT", `/people/${personId}`, { name });
 }
 
+/** Sets the person's cover-photo source face; Immich queues its own thumbnail-generation job as a side effect. */
+export function setPersonFeatureFace(user: ImmichUser, personId: string, assetId: string) {
+  return immich(user, "PUT", `/people/${personId}`, { featureFaceAssetId: assetId });
+}
+
 export function mergePerson(user: ImmichUser, targetId: string, sourceIds: string[]) {
   return immich(user, "POST", `/people/${targetId}/merge`, { ids: sourceIds });
 }

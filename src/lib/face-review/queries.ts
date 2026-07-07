@@ -428,6 +428,29 @@ export async function deleteEmptyPeople(ownerId: string): Promise<number> {
   return result.rowCount ?? 0;
 }
 
+/**
+ * Whether a person already has Immich's feature-face pointer set, plus one
+ * of their own visible faces' assetId to use as a fallback if not. See
+ * ensurePersonThumbnail() in actions.ts for why this is needed.
+ */
+export async function getFeatureFaceStatus(
+  personId: string,
+  ownerId: string
+): Promise<{ hasFeatureFace: boolean; sampleAssetId: string | null }> {
+  const { rows } = await db.execute(sql`
+    SELECT p."faceAssetId" IS NOT NULL AS has_feature_face,
+           (SELECT af."assetId"::text
+              FROM asset_face af
+              JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
+             WHERE af."personId" = p.id AND af."isVisible" = true AND af."deletedAt" IS NULL
+             LIMIT 1) AS sample_asset_id
+      FROM person p
+     WHERE p.id = ${personId} AND p."ownerId" = ${ownerId}
+  `);
+  const r: any = rows[0];
+  return { hasFeatureFace: !!r?.has_feature_face, sampleAssetId: r?.sample_asset_id ?? null };
+}
+
 /** Exact-name match among the owner's people (case-insensitive). */
 export async function findPersonByName(ownerId: string, name: string): Promise<string | null> {
   const { rows } = await db.execute(sql`

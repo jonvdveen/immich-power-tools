@@ -3,8 +3,8 @@
  * All Immich mutations go through lib/face-review/immich.ts with the
  * requesting user's credentials; the DB is only read here (name lookup).
  */
-import { createPerson, reassignFace } from "@/lib/face-review/immich";
-import { deleteEmptyPeople, findPersonByName, personOwnedBy } from "@/lib/face-review/queries";
+import { createPerson, reassignFace, setPersonFeatureFace } from "@/lib/face-review/immich";
+import { deleteEmptyPeople, findPersonByName, getFeatureFaceStatus, personOwnedBy } from "@/lib/face-review/queries";
 
 type ImmichUser = { isUsingAPIKey?: boolean; accessToken?: string };
 
@@ -74,6 +74,25 @@ export async function reassignFaces(
   }
   if (done > 0 && ownerId) await deleteEmptyPeople(ownerId).catch(() => {});
   return { done, failed };
+}
+
+/**
+ * mergePerson() never gives the target a cover photo if it had none — unlike
+ * Immich's own per-face reassign endpoints, which self-heal a null
+ * faceAssetId by picking a random remaining face (confirmed in Immich's
+ * person.service.js: reassignFaces()/reassignFacesById() call
+ * createNewFeaturePhoto() when faceAssetId is null; mergePerson() just
+ * reassigns faces and deletes the source, nothing else). So a person born
+ * via resolveOrCreatePerson()+mergePerson() (the "name this whole person"
+ * flow, when the typed name doesn't match anyone) is stuck with no
+ * thumbnail forever. This mirrors Immich's own self-heal: pick one of the
+ * person's own visible faces and set it as the feature face, which queues
+ * Immich's thumbnail job. No-ops if a feature face is already set.
+ */
+export async function ensurePersonThumbnail(user: ImmichUser, personId: string, ownerId: string): Promise<void> {
+  const { hasFeatureFace, sampleAssetId } = await getFeatureFaceStatus(personId, ownerId);
+  if (hasFeatureFace || !sampleAssetId) return;
+  await setPersonFeatureFace(user, personId, sampleAssetId);
 }
 
 export function parseFaceIds(body: any): string[] {

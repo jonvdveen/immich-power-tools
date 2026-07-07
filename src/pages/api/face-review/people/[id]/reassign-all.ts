@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
-import { resolveTarget } from "@/lib/face-review/actions";
+import { ensurePersonThumbnail, resolveTarget } from "@/lib/face-review/actions";
 import { mergePerson } from "@/lib/face-review/immich";
 import { requireOwnedPerson } from "@/lib/face-review/route-utils";
 
@@ -32,6 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
     await mergePerson(gate.user, target.id, [gate.personId]);
+    await ensurePersonThumbnail(gate.user, target.id, gate.ownerId).catch(() => {});
     return res.status(200).json({ mergedInto: target.id });
   } catch (error: any) {
     res.status(400).json({ error: error?.message });

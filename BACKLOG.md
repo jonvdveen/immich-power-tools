@@ -35,9 +35,20 @@ context in project memory (`immich-power-tools-cull.md`,
   person left behind after reassigning their only face, now auto-swept)
   plus hiding "Scan Unassigned Faces" for non-admins (confirmed in Immich's
   own job.controller.js that `PUT /jobs/facialRecognition` requires
-  `admin: true` — household has 1 admin + 15 non-admin users). Still
-  needed: decide version bump (last released 0.24.0), push branch, tag,
-  confirm the release workflow publishes.
+  `admin: true` — household has 1 admin + 15 non-admin users). Plus a 3rd
+  commit (2026-07-07): a brand-new person created via "name this whole
+  person" (create + merge, when the typed name matches nobody) never got a
+  cover photo — confirmed in Immich's own person.service.js that
+  mergePerson() skips the self-heal its own per-face reassign endpoints do
+  (createNewFeaturePhoto() when faceAssetId is null). `ensurePersonThumbnail()`
+  in actions.ts now replicates that self-heal after every merge. Verified
+  live: "Mark Skingley" was the one person in the whole 6,538-row table with
+  no thumbnail at all (79 others have a null faceAssetId but still render
+  via an old thumbnailPath — false positives, not this bug); repaired
+  directly via the Immich API (confirmed faceAssetId + thumbnailPath now
+  populated, thumbnail serves 200). Still needed: decide version bump (last
+  released 0.24.0), push branch, tag, confirm the release workflow
+  publishes.
 
 ## Tag Manager (new tag tree editor, `/tags`)
 
