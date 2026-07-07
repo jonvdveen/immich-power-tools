@@ -1,10 +1,14 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
-  ChevronDown, ChevronRight, ExternalLink, Loader2, Plus, Tag as TagIcon, Trash2,
+  ChevronDown, ChevronRight, FolderTree, Loader2, MoreVertical, Plus,
+  Tag as TagIcon, Trash2,
 } from "lucide-react";
 
-import { AlertDialog } from "@/components/ui/alert-dialog";
+import { AlertDialog, IAlertDialogActions } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useConfig } from "@/contexts/ConfigContext";
 import { ITag } from "@/handlers/api/tag.handler";
@@ -48,6 +52,8 @@ export default function TagRow({
   const [draftName, setDraftName] = useState(leafOf(tag.value));
   const [addingChild, setAddingChild] = useState(false);
   const [childName, setChildName] = useState("");
+  const [moving, setMoving] = useState(false);
+  const deleteDialogRef = useRef<IAlertDialogActions>(null);
 
   const allChildren = childrenOf.get(tag.id) ?? [];
   const children = visibleIds ? allChildren.filter((c) => visibleIds.has(c.id)) : allChildren;
@@ -113,11 +119,11 @@ export default function TagRow({
               if (e.key === "Enter") commitRename();
               else if (e.key === "Escape") { setDraftName(leafOf(tag.value)); setEditing(false); }
             }}
-            className="h-6 w-48 text-sm"
+            className="h-6 min-w-0 flex-1 text-sm"
           />
         ) : (
           <span
-            className="cursor-text truncate rounded px-1 text-sm hover:bg-muted"
+            className="min-w-0 flex-1 cursor-text truncate rounded px-1 text-sm hover:bg-muted"
             title="Click to rename"
             onClick={() => !busy && setEditing(true)}
           >
@@ -125,41 +131,54 @@ export default function TagRow({
           </span>
         )}
 
-        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+        {busy && <Loader2 size={13} className="shrink-0 animate-spin text-muted-foreground" />}
+
+        <a
+          href={`${exImmichUrl}/tags?path=${encodeURIComponent(tag.value)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`View ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"} in Immich`}
+          className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-primary/20 hover:text-primary"
+        >
           {tag.assetCount.toLocaleString()}
-        </span>
+        </a>
 
-        {busy && <Loader2 size={13} className="animate-spin text-muted-foreground" />}
-
-        <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="View tagged photos in Immich" asChild>
-            <a href={`${exImmichUrl}/tags?path=${encodeURIComponent(tag.value)}`} target="_blank" rel="noopener noreferrer">
-              <ExternalLink size={14} />
-            </a>
-          </Button>
-          <Button
-            size="sm" variant="ghost" className="h-7 w-7 p-0" title="Add sub-tag" disabled={busy}
-            onClick={() => setAddingChild((v) => !v)}
-          >
-            <Plus size={14} />
-          </Button>
-          <MovePopover tag={tag} allTags={allTags} onMove={(p) => actions.onMove(tag, p)} disabled={busy} />
-          <AlertDialog
-            asChild
-            disabled={busy}
-            title={`Delete "${leafOf(tag.value)}"?`}
-            description={
-              descendantCount > 0
-                ? `This tag has ${descendantCount} sub-tag${descendantCount === 1 ? "" : "s"} and is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. Deleting it deletes the sub-tags too (Immich cascades this). Photos themselves are never touched, only the tag. This can't be undone.`
-                : `This tag is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. Photos themselves are never touched, only the tag. This can't be undone.`
-            }
-            onConfirm={() => actions.onDelete(tag)}
-          >
-            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Delete" disabled={busy}>
-              <Trash2 size={14} className="text-red-500" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="ghost" className="h-7 w-7 shrink-0 p-0" title="More actions" disabled={busy}>
+              <MoreVertical size={14} />
             </Button>
-          </AlertDialog>
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setAddingChild(true)}>
+              <Plus size={14} className="mr-2" /> Add sub-tag
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setMoving(true)}>
+              <FolderTree size={14} className="mr-2" /> Move to…
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-red-500 focus:text-red-500"
+              // Deferred a tick: opening the AlertDialog synchronously here
+              // races the DropdownMenu's own close/focus-return, which can
+              // leave the confirm dialog un-openable.
+              onSelect={() => setTimeout(() => deleteDialogRef.current?.open(), 0)}
+            >
+              <Trash2 size={14} className="mr-2" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <AlertDialog
+          ref={deleteDialogRef}
+          title={`Delete "${leafOf(tag.value)}"?`}
+          description={
+            descendantCount > 0
+              ? `This tag has ${descendantCount} sub-tag${descendantCount === 1 ? "" : "s"} and is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. Deleting it deletes the sub-tags too (Immich cascades this). Photos themselves are never touched, only the tag. This can't be undone.`
+              : `This tag is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. Photos themselves are never touched, only the tag. This can't be undone.`
+          }
+          onConfirm={() => actions.onDelete(tag)}
+        />
       </div>
 
       {addingChild && (
@@ -175,6 +194,17 @@ export default function TagRow({
               else if (e.key === "Escape") { setChildName(""); setAddingChild(false); }
             }}
             onBlur={() => { if (!childName.trim()) setAddingChild(false); }}
+          />
+        </div>
+      )}
+
+      {moving && (
+        <div className="py-1" style={{ paddingLeft: (depth + 1) * 20 + 24 }}>
+          <MovePopover
+            tag={tag}
+            allTags={allTags}
+            onMove={(p) => actions.onMove(tag, p)}
+            onClose={() => setMoving(false)}
           />
         </div>
       )}
