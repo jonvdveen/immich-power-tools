@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { PERSON_THUBNAIL_PATH } from "@/config/routes";
 import {
   clearEmptyPeople, getScanStatus, listFaceReviewPeople, scanMissing,
@@ -49,6 +50,7 @@ const FILTER_VALUES = FILTERS.map((f) => f.value);
 
 export default function FaceReviewIndexPage() {
   const router = useRouter();
+  const { isAdmin } = useCurrentUser();
   const queryClient = useQueryClient();
   // Kept in the URL (not plain useState) so a refresh, or navigating back
   // from a person's review page, lands on the same filter instead of always
@@ -154,18 +156,22 @@ export default function FaceReviewIndexPage() {
         leftComponent="Face Review"
         rightComponent={
           <div className="flex items-center gap-2">
-            <AlertDialog
-              asChild
-              disabled={!!busy}
-              title="Run facial recognition on missing faces?"
-              description={'Queues Immich\'s Facial Recognition job in "Missing" mode: detected faces that aren\'t assigned to anyone yet get matched to your existing people. It never re-clusters existing assignments, so your manual corrections are safe. (The dangerous variant is "All", which this tool never uses.) When it finishes, you\'ll see how many faces were newly assigned and to whom.'}
-              onConfirm={runScan}
-            >
-              <Button size="sm" variant="outline" disabled={!!busy}>
-                {busy === "scan" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <ScanFace size={14} className="mr-1" />}
-                Scan unassigned faces
-              </Button>
-            </AlertDialog>
+            {/* Queues Immich's PUT /jobs/facialRecognition, which the server
+                gates admin: true — a non-admin's click would just 403. */}
+            {isAdmin && (
+              <AlertDialog
+                asChild
+                disabled={!!busy}
+                title="Run facial recognition on missing faces?"
+                description={'Queues Immich\'s Facial Recognition job in "Missing" mode: detected faces that aren\'t assigned to anyone yet get matched to your existing people. It never re-clusters existing assignments, so your manual corrections are safe. (The dangerous variant is "All", which this tool never uses.) When it finishes, you\'ll see how many faces were newly assigned and to whom.'}
+                onConfirm={runScan}
+              >
+                <Button size="sm" variant="outline" disabled={!!busy}>
+                  {busy === "scan" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <ScanFace size={14} className="mr-1" />}
+                  Scan unassigned faces
+                </Button>
+              </AlertDialog>
+            )}
             <AlertDialog
               asChild
               disabled={!!busy}
