@@ -24,6 +24,20 @@ context in project memory (`immich-power-tools-cull.md`,
 - Upstream PR still deferred by user request — see
   `local-testing/FACE_REVIEW_PR_NOTES.md` (git-ignored) for the as-built
   4-PR split when ready.
+- **FR-2**: 2026-07-06/07, two commits on `local-stack`
+  (125dfba, 8767bbc) — COMMITTED LOCALLY, NOT YET PUSHED to origin or
+  released. Deployed to the local `:8001` container and working there.
+  Fixes 5 bugs the user found in manual testing (PersonNameInput
+  stale-closure race creating wrong people from autocomplete; whole-person
+  merge losing the index page's list filter on redirect; same filter lost
+  on plain refresh, fixed by moving it into the URL; new-person cover image
+  stuck on placeholder, `unoptimized` was missing on one Image; empty
+  person left behind after reassigning their only face, now auto-swept)
+  plus hiding "Scan Unassigned Faces" for non-admins (confirmed in Immich's
+  own job.controller.js that `PUT /jobs/facialRecognition` requires
+  `admin: true` — household has 1 admin + 15 non-admin users). Still
+  needed: decide version bump (last released 0.24.0), push branch, tag,
+  confirm the release workflow publishes.
 
 ## Tag Manager (new tag tree editor, `/tags`)
 
