@@ -7,6 +7,22 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.24.3 — 2026-07-07
+
+- **Renamed:** "Cull Photos" is now "Rate & Cull" — a plainer name for
+  people who haven't run into the photography term "cull" before.
+- **New:** keyboard shortcuts on that page are now yours to remap. Click
+  the keyboard icon next to the "?" help button, click any shortcut, then
+  press whichever key you'd rather use. If that key's already taken by
+  something else, the two just swap.
+- **Fixed:** Pick and Reject now toggle off the same way Reviewed and
+  Favorite already did — press the key once to set it, press it again to
+  clear it, instead of needing a separate "unflag" key every time.
+- **Fixed:** the GitHub page for this project could send people to install
+  the *original* Immich Power Tools instead of this customized version —
+  it was still showing the unmodified upstream instructions. Fixed, and
+  added a proper getting-started guide.
+
 ## v0.24.2 — 2026-07-07
 
 - **Fixed:** long tag names in Tag Manager were getting cut off way more

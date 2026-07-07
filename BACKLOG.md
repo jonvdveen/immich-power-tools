@@ -4,7 +4,7 @@ Short ids, removed when resolved (not archived). See CLAUDE.md-equivalent
 context in project memory (`immich-power-tools-cull.md`,
 `face-review-powertools-integration.md`) for the "why" behind each area.
 
-## Cull Photos (new photo rating/culling tool, `/assets/cull`)
+## Rate & Cull (photo rating/culling tool, `/assets/cull`; renamed from "Cull Photos" in v0.24.3)
 
 - **CULL-4**: No upstream PR prep started (mirrors the Face Review PR
   deferral — user wants to be "very very confident and satisfied" first).
@@ -26,8 +26,28 @@ context in project memory (`immich-power-tools-cull.md`,
   off it. User confirmed live on `:8001` before release. Reminder for next
   time: icon/code changes only take effect on `:8001` after
   `docker build -t immich-power-tools:local-stack .` +
-  `docker compose up -d power-tools` from `~/immich-app` — editing the repo
-  alone doesn't touch the running container.
+  `docker compose up -d power-tools` from `~/Docker/immich-app` (project
+  dirs got reorganized under `~/Docker/` and `~/scripts/` at some point —
+  `~/immich-power-tools` and `~/immich-app` no longer exist) — editing the
+  repo alone doesn't touch the running container.
+- Released in v0.24.3 (2026-07-07): renamed "Cull Photos" → "Rate & Cull"
+  (sidebar + page header + help dialog) — user's friend didn't recognize
+  "cull". Route (`/assets/cull`) and the Immich tag namespace
+  (`ImmichPowerTools_CullandRate`) both left untouched on purpose — renaming
+  either would orphan/break existing data or bookmarks, unlike a display
+  string. Pick/Reject now toggle on keypress in the viewer (press again to
+  unflag), matching how Reviewed/Favorite/rating already worked — only
+  Pick/Reject were inconsistent, so this is a narrower fix than it sounds.
+  Also added user-remappable shortcuts for the six quick-action keys (Pick,
+  Reject, Unflag, Reviewed, Favorite, Info) — click the new keyboard icon
+  next to "?", click a key, press whatever you want instead; conflicts
+  auto-swap the two actions' keys rather than leaving one unbound. Stored in
+  `localStorage` (`cullShortcuts`), same per-browser pattern as this app's
+  other UI prefs (no per-user settings backend exists to hang it on
+  instead). Rating (1-5, 0) and navigation (arrows, Escape) stay fixed —
+  not worth customizing. New: `src/lib/cull/shortcuts.ts` (bindings +
+  swap-on-conflict logic), `src/components/cull/ShortcutSettings.tsx`
+  (remap dialog).
 
 ## Face Review (`/face-review`)
 
@@ -82,3 +102,25 @@ context in project memory (`immich-power-tools-cull.md`,
   open/close state. Delete's confirm dialog opens via the existing
   `AlertDialog` ref-imperative pattern (`PersonItem.tsx` precedent) rather
   than as a visible nested trigger, for the same reason.
+
+## Documentation
+
+- Fixed 2026-07-07: a friend followed the GitHub repo's install
+  instructions and ended up running the **upstream** image instead of this
+  fork's — root cause is that `README.md` was still the untouched upstream
+  copy (two `ghcr.io/immich-power-tools/immich-power-tools:latest`
+  references, no mention this is a customized fork at all), and worse, the
+  fork's **default branch on GitHub is `main`**, not `local-stack` — so
+  anyone landing on the repo page saw that untouched README regardless of
+  what `local-stack` said. Fixed both: `local-stack`'s README now opens
+  with a banner pointing at this fork's image and a new
+  `GETTING_STARTED.md` (adapted from the friend-share zip that used to live
+  outside the repo, in `~/Archive/immich-power-tools-share/` — same content,
+  now the actual on-GitHub source of truth instead of a stale local copy);
+  `main` got the same small banner added directly (deliberately NOT
+  otherwise touched — it stays a clean mirror of upstream for future
+  `git merge upstream/main` and for the eventual upstream PRs, see
+  `local-testing/FACE_REVIEW_PR_NOTES.md`). Considered switching the GitHub
+  default branch to `local-stack` instead, which would fix this more
+  directly — didn't, since it'd change clone/PR-base behavior repo-wide;
+  worth reconsidering if this bites someone again.
