@@ -1,5 +1,15 @@
 # ![Logo](./public/favicon-32x32.png) Immich Power Tools
 
+> [!IMPORTANT]
+> **This `main` branch is an untouched mirror of the upstream project.**
+> jonvdveen's customized build — with Face Review, Rate & Cull, Tag
+> Manager, and various fixes not in upstream — lives on the
+> [`local-stack` branch](https://github.com/jonvdveen/immich-power-tools/tree/local-stack).
+> If a friend sent you here, use that branch's
+> [GETTING_STARTED.md](https://github.com/jonvdveen/immich-power-tools/blob/local-stack/GETTING_STARTED.md)
+> and image (`ghcr.io/jonvdveen/immich-power-tools:latest`), not the
+> instructions below.
+
 A unofficial immich client to provide better tools to organize and manage your immich account. Building it to speed up your workflows in Immich to organize your people and albums.
 
 > [!IMPORTANT]
