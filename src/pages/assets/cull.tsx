@@ -10,6 +10,7 @@ import type { RenderImageContext, RenderImageProps } from "react-photo-album";
 
 import ExifPanel from "@/components/cull/ExifPanel";
 import HelpGuide from "@/components/cull/HelpGuide";
+import ShortcutSettings from "@/components/cull/ShortcutSettings";
 import PageLayout from "@/components/layouts/PageLayout";
 import type { AssetPhoto } from "@/components/shared/AssetGrid";
 import FloatingBar from "@/components/shared/FloatingBar";
@@ -30,6 +31,9 @@ import {
   ICullReviewedFilter, listCullAssets, removeTagFromAssets,
 } from "@/handlers/api/cull.handler";
 import { ASSET_PREVIEW_PATH, ASSET_THUMBNAIL_PATH, ASSET_VIDEO_PATH } from "@/config/routes";
+import {
+  displayKey, ICullShortcutAction, keyMatches, loadCullShortcuts, saveCullShortcuts,
+} from "@/lib/cull/shortcuts";
 import { IAlbum } from "@/types/album";
 
 const PAGE_SIZE = 200;
@@ -106,6 +110,12 @@ export default function CullPhotosPage() {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [showExif, setShowExif] = useState(false);
+  const [shortcuts, setShortcutsState] = useState(loadCullShortcuts);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const setShortcuts = useCallback((next: Record<ICullShortcutAction, string>) => {
+    setShortcutsState(next);
+    saveCullShortcuts(next);
+  }, []);
 
   const tagIdsRef = useRef<{ pick?: string; reject?: string; reviewed?: string }>({});
   const prefetchedRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -337,7 +347,7 @@ export default function CullPhotosPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey || shortcutsOpen) return;
 
       // Keys act on the viewer photo when it's open, else on the grid selection.
       const targetIds = viewerAsset ? [viewerAsset.id] : selectedIds;
@@ -350,7 +360,7 @@ export default function CullPhotosPage() {
       if (viewerIndex !== null) {
         if (e.key === "ArrowRight") { e.preventDefault(); setViewerIndex((i) => Math.min((i ?? 0) + 1, assets.length - 1)); return; }
         if (e.key === "ArrowLeft") { e.preventDefault(); setViewerIndex((i) => Math.max((i ?? 0) - 1, 0)); return; }
-        if (e.key === "i" || e.key === "I") { e.preventDefault(); setShowExif((v) => !v); return; }
+        if (keyMatches(e, shortcuts.info)) { e.preventDefault(); setShowExif((v) => !v); return; }
       }
       if (!targetIds.length) return;
 
@@ -366,28 +376,29 @@ export default function CullPhotosPage() {
         // "current" is unambiguous).
         const clear = viewerAsset && viewerAsset.rating === n;
         rateAssets(targetIds, clear ? null : n);
-      } else if (e.key === "p" || e.key === "P") {
-        e.preventDefault();
-        flagAssets(targetIds, "pick");
-      } else if (e.key === "x" || e.key === "X") {
-        e.preventDefault();
-        flagAssets(targetIds, "reject");
-      } else if (e.key === "u" || e.key === "U") {
-        e.preventDefault();
-        flagAssets(targetIds, null);
-      } else if (e.key === "r" || e.key === "R") {
+      } else if (keyMatches(e, shortcuts.pick)) {
         e.preventDefault();
         // Toggle is only unambiguous for the single open photo; a bulk grid
-        // selection just gets marked reviewed (same convention as P/X below).
+        // selection just gets marked picked (same convention as Reviewed/
+        // Favorite below) — Unflag is still there for bulk clearing.
+        flagAssets(targetIds, viewerAsset && viewerAsset.picked ? null : "pick");
+      } else if (keyMatches(e, shortcuts.reject)) {
+        e.preventDefault();
+        flagAssets(targetIds, viewerAsset && viewerAsset.rejected ? null : "reject");
+      } else if (keyMatches(e, shortcuts.unflag)) {
+        e.preventDefault();
+        flagAssets(targetIds, null);
+      } else if (keyMatches(e, shortcuts.reviewed)) {
+        e.preventDefault();
         reviewAssets(targetIds, !(viewerAsset && viewerAsset.reviewed));
-      } else if (e.key === "f" || e.key === "F" || e.key === ".") {
+      } else if (keyMatches(e, shortcuts.favorite)) {
         e.preventDefault();
         favoriteAssets(targetIds, !(viewerAsset && viewerAsset.isFavorite));
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [viewerAsset, viewerIndex, selectedIds, assets.length, rateAssets, flagAssets, reviewAssets, favoriteAssets]);
+  }, [viewerAsset, viewerIndex, selectedIds, assets.length, shortcuts, shortcutsOpen, rateAssets, flagAssets, reviewAssets, favoriteAssets]);
 
   // --- grid photos ---
   const images: AssetPhoto[] = useMemo(
@@ -448,16 +459,26 @@ export default function CullPhotosPage() {
     </span>
   );
 
+  const shortcutHint =
+    `1–5 rate · ${displayKey(shortcuts.pick)} pick · ${displayKey(shortcuts.reject)} reject · ` +
+    `${displayKey(shortcuts.unflag)} unflag · ${displayKey(shortcuts.reviewed)} reviewed · ` +
+    `${displayKey(shortcuts.favorite)} favorite · ${displayKey(shortcuts.info)} info · ` +
+    `←/→ navigate · Esc close/clear`;
+
   return (
-    <PageLayout title="Cull Photos">
+    <PageLayout title="Rate & Cull">
       <Header
-        leftComponent="Cull Photos"
+        leftComponent="Rate & Cull"
         rightComponent={
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              1–5 rate · P pick · X reject · U unflag · R reviewed · F favorite · I info · ←/→ navigate · Esc close/clear
-            </span>
-            <HelpGuide />
+            <span className="text-xs text-muted-foreground">{shortcutHint}</span>
+            <ShortcutSettings
+              open={shortcutsOpen}
+              onOpenChange={setShortcutsOpen}
+              shortcuts={shortcuts}
+              onChange={setShortcuts}
+            />
+            <HelpGuide shortcuts={shortcuts} />
           </div>
         }
       />
@@ -613,22 +634,22 @@ export default function CullPhotosPage() {
           <Button size="sm" variant="ghost" title="Clear rating" onClick={() => rateAssets(selectedIds, null)}>
             <StarOff size={15} />
           </Button>
-          <Button size="sm" variant="ghost" title="Pick (P)" onClick={() => flagAssets(selectedIds, "pick")}>
+          <Button size="sm" variant="ghost" title={`Pick (${displayKey(shortcuts.pick)})`} onClick={() => flagAssets(selectedIds, "pick")}>
             <CheckCircle2 size={15} className="text-emerald-500" />
           </Button>
-          <Button size="sm" variant="ghost" title="Reject (X)" onClick={() => flagAssets(selectedIds, "reject")}>
+          <Button size="sm" variant="ghost" title={`Reject (${displayKey(shortcuts.reject)})`} onClick={() => flagAssets(selectedIds, "reject")}>
             <XCircle size={15} className="text-red-500" />
           </Button>
-          <Button size="sm" variant="ghost" title="Unflag (U)" onClick={() => flagAssets(selectedIds, null)}>
+          <Button size="sm" variant="ghost" title={`Unflag (${displayKey(shortcuts.unflag)})`} onClick={() => flagAssets(selectedIds, null)}>
             <Flag size={15} className="text-muted-foreground" />
           </Button>
-          <Button size="sm" variant="ghost" title="Mark Reviewed (R)" onClick={() => reviewAssets(selectedIds, true)}>
+          <Button size="sm" variant="ghost" title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`} onClick={() => reviewAssets(selectedIds, true)}>
             <Glasses size={15} className="text-sky-500" />
           </Button>
           <Button size="sm" variant="ghost" title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
             <Glasses size={15} className="text-muted-foreground" />
           </Button>
-          <Button size="sm" variant="ghost" title="Favorite (F)" onClick={() => favoriteAssets(selectedIds, true)}>
+          <Button size="sm" variant="ghost" title={`Favorite (${displayKey(shortcuts.favorite)})`} onClick={() => favoriteAssets(selectedIds, true)}>
             <Heart size={15} className="fill-pink-500 text-pink-500" />
           </Button>
           <Button size="sm" variant="ghost" title="Unfavorite" onClick={() => favoriteAssets(selectedIds, false)}>
@@ -677,7 +698,7 @@ export default function CullPhotosPage() {
               </a>
               <button
                 className={`rounded p-1 hover:bg-white/10 ${showExif ? "bg-white/10" : ""}`}
-                title="Info (I)"
+                title={`Info (${displayKey(shortcuts.info)})`}
                 onClick={(e) => { e.stopPropagation(); setShowExif((v) => !v); }}
               >
                 <Info size={18} />
@@ -734,21 +755,21 @@ export default function CullPhotosPage() {
             <StarRow value={viewerAsset.rating} size={22} onRate={(n) => rateAssets([viewerAsset.id], n)} />
             <span className="h-6 w-px bg-white/20" />
             <button
-              title="Pick (P) — click again to unflag"
+              title={`Pick (${displayKey(shortcuts.pick)}) — press again to unflag`}
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.picked ? "bg-emerald-600 text-white" : "text-white/60 hover:bg-white/10"}`}
               onClick={() => flagAssets([viewerAsset.id], viewerAsset.picked ? null : "pick")}
             >
               <CheckCircle2 size={15} /> Pick
             </button>
             <button
-              title="Reject (X) — click again to unflag"
+              title={`Reject (${displayKey(shortcuts.reject)}) — press again to unflag`}
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.rejected ? "bg-red-600 text-white" : "text-white/60 hover:bg-white/10"}`}
               onClick={() => flagAssets([viewerAsset.id], viewerAsset.rejected ? null : "reject")}
             >
               <XCircle size={15} /> Reject
             </button>
             <button
-              title="Reviewed (R) — click again to unmark"
+              title={`Reviewed (${displayKey(shortcuts.reviewed)}) — press again to unmark`}
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.reviewed ? "bg-sky-600 text-white" : "text-white/60 hover:bg-white/10"}`}
               onClick={() => reviewAssets([viewerAsset.id], !viewerAsset.reviewed)}
             >
@@ -756,7 +777,7 @@ export default function CullPhotosPage() {
             </button>
             <span className="h-6 w-px bg-white/20" />
             <button
-              title="Favorite (F) — click again to unfavorite"
+              title={`Favorite (${displayKey(shortcuts.favorite)}) — press again to unfavorite`}
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.isFavorite ? "text-pink-500" : "text-white/60 hover:bg-white/10"}`}
               onClick={() => favoriteAssets([viewerAsset.id], !viewerAsset.isFavorite)}
             >
