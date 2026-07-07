@@ -2,8 +2,8 @@ import "react-photo-album/rows.css";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Archive, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Flag, Heart, Info,
-  Loader2, Star, StarOff, Trash2, X,
+  Archive, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Flag, Glasses, Heart, Info,
+  Loader2, Star, StarOff, Trash2, X, XCircle,
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
@@ -614,19 +614,19 @@ export default function CullPhotosPage() {
             <StarOff size={15} />
           </Button>
           <Button size="sm" variant="ghost" title="Pick (P)" onClick={() => flagAssets(selectedIds, "pick")}>
-            <Flag size={15} className="text-emerald-500" />
+            <CheckCircle2 size={15} className="text-emerald-500" />
           </Button>
           <Button size="sm" variant="ghost" title="Reject (X)" onClick={() => flagAssets(selectedIds, "reject")}>
-            <Flag size={15} className="text-red-500" />
+            <XCircle size={15} className="text-red-500" />
           </Button>
           <Button size="sm" variant="ghost" title="Unflag (U)" onClick={() => flagAssets(selectedIds, null)}>
             <Flag size={15} className="text-muted-foreground" />
           </Button>
           <Button size="sm" variant="ghost" title="Mark Reviewed (R)" onClick={() => reviewAssets(selectedIds, true)}>
-            <CheckCircle2 size={15} className="text-sky-500" />
+            <Glasses size={15} className="text-sky-500" />
           </Button>
           <Button size="sm" variant="ghost" title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
-            <CheckCircle2 size={15} className="text-muted-foreground" />
+            <Glasses size={15} className="text-muted-foreground" />
           </Button>
           <Button size="sm" variant="ghost" title="Favorite (F)" onClick={() => favoriteAssets(selectedIds, true)}>
             <Heart size={15} className="fill-pink-500 text-pink-500" />
@@ -738,21 +738,21 @@ export default function CullPhotosPage() {
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.picked ? "bg-emerald-600 text-white" : "text-white/60 hover:bg-white/10"}`}
               onClick={() => flagAssets([viewerAsset.id], viewerAsset.picked ? null : "pick")}
             >
-              <Flag size={15} /> Pick
+              <CheckCircle2 size={15} /> Pick
             </button>
             <button
               title="Reject (X) — click again to unflag"
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.rejected ? "bg-red-600 text-white" : "text-white/60 hover:bg-white/10"}`}
               onClick={() => flagAssets([viewerAsset.id], viewerAsset.rejected ? null : "reject")}
             >
-              <Flag size={15} /> Reject
+              <XCircle size={15} /> Reject
             </button>
             <button
               title="Reviewed (R) — click again to unmark"
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.reviewed ? "bg-sky-600 text-white" : "text-white/60 hover:bg-white/10"}`}
               onClick={() => reviewAssets([viewerAsset.id], !viewerAsset.reviewed)}
             >
-              <CheckCircle2 size={15} /> Reviewed
+              <Glasses size={15} /> Reviewed
             </button>
             <span className="h-6 w-px bg-white/20" />
             <button

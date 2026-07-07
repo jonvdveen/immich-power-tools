@@ -15,6 +15,18 @@ context in project memory (`immich-power-tools-cull.md`,
   from flat "Picked"/"Rejected", which had zero tagged assets at rename time
   (verified); the old flat tags are harmless orphans, deletable via Tag
   Manager.
+- 2026-07-07: Pick/Reject/Reviewed all shared the same icon shape (Pick and
+  Reject were both a plain `Flag`, just color-coded; Reviewed was the same
+  `CheckCircle2` glyph Pick later became) — user flagged this as a real
+  mistake risk ("lost photos") on Reject specifically, then asked for the
+  full set to be shape-distinct. Now: Pick = `CheckCircle2` (circled check),
+  Reject = `XCircle` (circled X, matches its existing `(X)` keybinding),
+  Reviewed = `Glasses`. Unflag keeps the plain `Flag` icon — no longer
+  ambiguous with either since Pick moved off it. User confirmed live on
+  `:8001` after two rebuild+redeploy cycles (icons only take effect after
+  `docker build -t immich-power-tools:local-stack .` +
+  `docker compose up -d power-tools` from `~/immich-app`; editing the repo
+  alone doesn't touch the running container).
 
 ## Face Review (`/face-review`)
 
