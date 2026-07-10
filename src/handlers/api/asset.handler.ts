@@ -55,11 +55,15 @@ export interface ILocationManagerFilters {
   gpsStatus?: "all" | "set" | "notSet";
   page?: number;
   sortOrder?: "asc" | "desc";
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface ILocationManagerAssetsResponse {
   assets: IAsset[];
   hasMore: boolean;
+  /** Total matching the filters; only computed on page 1. */
+  total?: number;
 }
 
 export const listLocationManagerAssets = async (

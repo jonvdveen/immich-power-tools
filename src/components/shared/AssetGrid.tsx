@@ -44,6 +44,10 @@ interface AssetGridProps {
   selectable?: boolean;
   /** Per-thumbnail overlay content; defaults to the open-in-Immich link. */
   renderExtras?: (photo: AssetPhoto) => React.ReactNode;
+  /** Reports the photo id under the cursor (null when leaving). */
+  onPhotoHover?: (id: string | null) => void;
+  /** Photo to flash with a cyan ring (e.g. its map pin was clicked). */
+  highlightedAssetId?: string | null;
   onSelectionChange?: (ids: string[]) => void;
   onDeleteAsset?: (id: string) => void;
   onFavoriteAsset?: (id: string, isFavorite: boolean) => void;
@@ -55,7 +59,7 @@ interface AssetGridRef {
   unselectAll: () => void;
 }
 
-const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal = true, selectable = false, renderExtras, onSelectionChange, onDeleteAsset, onFavoriteAsset }, ref) => {
+const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal = true, selectable = false, renderExtras, onPhotoHover, highlightedAssetId, onSelectionChange, onDeleteAsset, onFavoriteAsset }, ref) => {
   const [index, setIndex] = useState(-1);
   const [lastSelectedIndex, setLastSelectedIndex] = useState(-1);
   const [showInfoPanel, setShowInfoPanel] = useState(() => {
@@ -223,6 +227,8 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
         selectable={selectable}
         onSelect={(event) => handleSelect(context.index, context.photo, event)}
         selectionMode={selectable && selectedIds.length > 0}
+        onHover={onPhotoHover}
+        highlighted={highlightedAssetId === context.photo.id}
       />
     );
   };

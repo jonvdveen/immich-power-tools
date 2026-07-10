@@ -1,7 +1,7 @@
 import { appDb } from "@/db";
 import { locationFavorites } from "@/db/schema/locationFavorites.schema";
 import { getCurrentUser } from "@/handlers/serverUtils/user.utils";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, max } from "drizzle-orm";
 import { NextApiRequest, NextApiResponse } from "next";
 import { randomUUID } from "crypto";
 
@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .select()
       .from(locationFavorites)
       .where(eq(locationFavorites.ownerId, currentUser.id))
-      .orderBy(asc(locationFavorites.name));
+      .orderBy(asc(locationFavorites.sortOrder), asc(locationFavorites.name));
     return res.status(200).json(rows);
   }
 
@@ -34,12 +34,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ message: "Valid latitude and longitude are required" });
     }
     const id = randomUUID();
+    const [{ maxOrder }] = await appDb
+      .select({ maxOrder: max(locationFavorites.sortOrder) })
+      .from(locationFavorites)
+      .where(eq(locationFavorites.ownerId, currentUser.id));
     await appDb.insert(locationFavorites).values({
       id,
       ownerId: currentUser.id,
       name: trimmedName,
       latitude,
       longitude,
+      sortOrder: (maxOrder ?? -1) + 1,
     });
     const [row] = await appDb
       .select()

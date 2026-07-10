@@ -9,6 +9,7 @@ export interface ILocationFavorite {
   name: string;
   latitude: number;
   longitude: number;
+  sortOrder: number;
 }
 
 export const listLocationFavorites = async (): Promise<ILocationFavorite[]> => {
@@ -32,4 +33,8 @@ export const updateLocationFavorite = async (
 
 export const deleteLocationFavorite = async (id: string): Promise<void> => {
   return API.delete(LOCATION_FAVORITE_PATH(id));
+};
+
+export const reorderLocationFavorites = async (ids: string[]): Promise<void> => {
+  return API.put(LOCATION_FAVORITES_PATH + "/reorder", { ids });
 };

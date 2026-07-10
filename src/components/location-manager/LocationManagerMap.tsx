@@ -4,7 +4,14 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from "react-leaflet";
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  TileLayer,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
 import { useEffect } from "react";
 import { ILatLng } from "@/lib/location-manager/coordinates";
 
@@ -25,23 +32,33 @@ export interface IFlyTo {
 
 interface LocationManagerMapProps {
   imagePins: IImagePin[];
+  /** Every loaded photo with coordinates — shown as small dots when "show all" is on. */
+  allPins: IImagePin[];
   droppedPin: ILatLng | null;
   selectedPin: ISelectedPin;
+  /** Photo currently hovered in the grid — its pin gets a highlight ring. */
+  highlightedAssetId: string | null;
   isDarkMode: boolean;
   onMapClick: (coords: ILatLng) => void;
   onImagePinClick: (id: string) => void;
+  /** Click on a small "all photos" dot — flashes the photo in the grid. */
+  onAllPinClick: (id: string) => void;
   onDroppedPinClick: () => void;
   flyTo: IFlyTo | null;
 }
 
 // Image pins are dots (one per selected photo); the dropped/candidate pin is
 // a classic teardrop so the two never read as the same thing. The selected
-// pin gets an amber ring.
-const imagePinIcon = (selected: boolean) =>
+// pin gets an amber ring; the grid-hovered photo's pin gets a cyan ring.
+const imagePinIcon = (selected: boolean, highlighted: boolean) =>
   L.divIcon({
     className: "",
     html: `<div style="width:16px;height:16px;border-radius:9999px;background:#2563eb;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)${
-      selected ? ";outline:3px solid #f59e0b;outline-offset:1px" : ""
+      selected
+        ? ";outline:3px solid #f59e0b;outline-offset:1px"
+        : highlighted
+          ? ";outline:3px solid #06b6d4;outline-offset:1px"
+          : ""
     }"></div>`,
     iconSize: [16, 16],
     iconAnchor: [8, 8],
@@ -88,6 +105,20 @@ function FitToPins({ imagePins }: { imagePins: IImagePin[] }) {
   return null;
 }
 
+// When "show all" turns on, fit the view to everything once.
+function FitToAllOnce({ pins, active }: { pins: IImagePin[]; active: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!active || pins.length === 0) return;
+    map.fitBounds(
+      L.latLngBounds(pins.map((p) => [p.lat, p.lng] as [number, number])),
+      { padding: [40, 40], maxZoom: 15 }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+  return null;
+}
+
 function FlyToHandler({ flyTo }: { flyTo: IFlyTo | null }) {
   const map = useMap();
   useEffect(() => {
@@ -103,14 +134,20 @@ function FlyToHandler({ flyTo }: { flyTo: IFlyTo | null }) {
 
 export default function LocationManagerMap({
   imagePins,
+  allPins,
   droppedPin,
   selectedPin,
+  highlightedAssetId,
   isDarkMode,
   onMapClick,
   onImagePinClick,
+  onAllPinClick,
   onDroppedPinClick,
   flyTo,
 }: LocationManagerMapProps) {
+  // Don't draw a dot underneath a photo's own selected pin.
+  const selectedIds = new Set(imagePins.map((p) => p.id));
+
   return (
     <MapContainer
       center={[20, 0]}
@@ -142,12 +179,32 @@ export default function LocationManagerMap({
       )}
       <MapClickHandler onMapClick={onMapClick} />
       <FitToPins imagePins={imagePins} />
+      <FitToAllOnce pins={allPins} active={allPins.length > 0} />
       <FlyToHandler flyTo={flyTo} />
+      {allPins
+        .filter((pin) => !selectedIds.has(pin.id))
+        .map((pin) => (
+          <CircleMarker
+            key={`all-${pin.id}`}
+            center={[pin.lat, pin.lng]}
+            radius={pin.id === highlightedAssetId ? 8 : 4}
+            pathOptions={{
+              color: pin.id === highlightedAssetId ? "#06b6d4" : "#8b5cf6",
+              fillColor: "#8b5cf6",
+              fillOpacity: 0.7,
+              weight: pin.id === highlightedAssetId ? 3 : 1,
+            }}
+            eventHandlers={{ click: () => onAllPinClick(pin.id) }}
+          />
+        ))}
       {imagePins.map((pin) => (
         <Marker
           key={pin.id}
           position={[pin.lat, pin.lng]}
-          icon={imagePinIcon(selectedPin?.type === "image" && selectedPin.id === pin.id)}
+          icon={imagePinIcon(
+            selectedPin?.type === "image" && selectedPin.id === pin.id,
+            pin.id === highlightedAssetId
+          )}
           eventHandlers={{ click: () => onImagePinClick(pin.id) }}
         />
       ))}

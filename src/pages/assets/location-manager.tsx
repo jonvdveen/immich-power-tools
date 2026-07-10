@@ -3,13 +3,26 @@ import AlbumDropdown from "@/components/shared/AlbumDropdown";
 import FloatingBar from "@/components/shared/FloatingBar";
 import Header from "@/components/shared/Header";
 import PageLayout from "@/components/layouts/PageLayout";
-import FavoritesPane from "@/components/location-manager/FavoritesPane";
+import FavoritesSheet from "@/components/location-manager/FavoritesSheet";
 import LocationSearchBox from "@/components/location-manager/LocationSearchBox";
-import { ILocationFavorite } from "@/handlers/api/locationFavorite.handler";
+import { useLocationFavorites } from "@/components/location-manager/useLocationFavorites";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToastAction } from "@/components/ui/toast";
 import { toast } from "@/components/ui/use-toast";
 import PhotoSelectionContext, {
   IPhotoSelectionContext,
@@ -18,6 +31,7 @@ import {
   listLocationManagerAssets,
   updateAssets,
 } from "@/handlers/api/asset.handler";
+import { ILocationFavorite } from "@/handlers/api/locationFavorite.handler";
 import {
   coordsEqual,
   formatCoordinates,
@@ -29,12 +43,21 @@ import type {
   IImagePin,
   ISelectedPin,
 } from "@/components/location-manager/LocationManagerMap";
-import { IAsset } from "@/types/asset";
-import { Check, ClipboardCopy, ClipboardPaste, Hourglass, SortAsc, SortDesc, X } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  Check,
+  ClipboardCopy,
+  ClipboardPaste,
+  Hourglass,
+  SortAsc,
+  SortDesc,
+  Star,
+  X,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import { useTheme } from "next-themes";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const LocationManagerMap = dynamic(
   () => import("@/components/location-manager/LocationManagerMap"),
@@ -62,10 +85,14 @@ export default function LocationManager() {
     albumId,
     gpsStatus = "all",
     sortOrder = "desc",
+    dateFrom,
+    dateTo,
   } = router.query as {
     albumId?: string;
     gpsStatus?: GpsStatus;
     sortOrder?: "asc" | "desc";
+    dateFrom?: string;
+    dateTo?: string;
   };
 
   const [contextState, setContextState] = useState<IPhotoSelectionContext>({
@@ -82,6 +109,7 @@ export default function LocationManager() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Shared clipboard + pin state (unified across grid and map controls).
@@ -94,6 +122,15 @@ export default function LocationManager() {
   const [imageCoordsError, setImageCoordsError] = useState(false);
   const [mapCoordsDraft, setMapCoordsDraft] = useState("");
   const [mapCoordsError, setMapCoordsError] = useState(false);
+
+  // Grid ↔ map linkage
+  const [showAllOnMap, setShowAllOnMap] = useState(false);
+  const [hoveredAssetId, setHoveredAssetId] = useState<string | null>(null);
+  const [flashedAssetId, setFlashedAssetId] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const favoritesState = useLocationFavorites();
+  const { favorites } = favoritesState;
 
   const setFilters = (patch: Record<string, string | undefined>) => {
     const next: Record<string, any> = { ...router.query, ...patch };
@@ -112,10 +149,11 @@ export default function LocationManager() {
     setLoading(true);
     setPage(1);
     updateContext({ selectedIds: [], assets: [] });
-    listLocationManagerAssets({ albumId, gpsStatus, page: 1, sortOrder })
-      .then(({ assets: fetched, hasMore: more }) => {
+    listLocationManagerAssets({ albumId, gpsStatus, page: 1, sortOrder, dateFrom, dateTo })
+      .then(({ assets: fetched, hasMore: more, total: count }) => {
         updateContext({ assets: fetched });
         setHasMore(more);
+        setTotal(count ?? null);
       })
       .catch(() =>
         toast({
@@ -126,18 +164,21 @@ export default function LocationManager() {
       )
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, albumId, gpsStatus, sortOrder]);
+  }, [router.isReady, albumId, gpsStatus, sortOrder, dateFrom, dateTo]);
 
   const loadMore = () => {
     const nextPage = page + 1;
     setLoadingMore(true);
-    listLocationManagerAssets({ albumId, gpsStatus, page: nextPage, sortOrder })
+    listLocationManagerAssets({ albumId, gpsStatus, page: nextPage, sortOrder, dateFrom, dateTo })
       .then(({ assets: fetched, hasMore: more }) => {
         // Dedupe by id — offset pagination can shift when writes remove
         // items from the "Location Not Set" filter between requests.
-        const known = new Set(assets.map((a) => a.id));
-        updateContext({
-          assets: [...assets, ...fetched.filter((a) => !known.has(a.id))],
+        setContextState((prev) => {
+          const known = new Set(prev.assets.map((a) => a.id));
+          return {
+            ...prev,
+            assets: [...prev.assets, ...fetched.filter((a) => !known.has(a.id))],
+          };
         });
         setPage(nextPage);
         setHasMore(more);
@@ -163,6 +204,16 @@ export default function LocationManager() {
         .filter((a) => a.latitude != null && a.longitude != null)
         .map((a) => ({ id: a.id, lat: a.latitude!, lng: a.longitude! })),
     [selectedAssets]
+  );
+
+  const allPins: IImagePin[] = useMemo(
+    () =>
+      showAllOnMap
+        ? assets
+            .filter((a) => a.latitude != null && a.longitude != null)
+            .map((a) => ({ id: a.id, lat: a.latitude!, lng: a.longitude! }))
+        : [],
+    [showAllOnMap, assets]
   );
 
   // The coordinates all selected images share — or null when mixed/absent.
@@ -217,9 +268,63 @@ export default function LocationManager() {
     setMapCoordsError(false);
   }, [selectedPinKey]);
 
+  // Restore each photo's previous coordinates after a write. Photos that had
+  // NO location before can't be reverted — Immich's API rejects null lat/lng
+  // (verified against its compiled validation: latitudeSchema is a plain
+  // number schema, not nullable), and clearing GPS is out of scope anyway.
+  const undoApply = async (entries: Array<[string, ILatLng]>) => {
+    setSaving(true);
+    try {
+      // One bulk call per distinct previous location.
+      const groups = new Map<string, { coords: ILatLng; ids: string[] }>();
+      for (const [id, coords] of entries) {
+        const key = formatCoordinates(coords);
+        const group = groups.get(key) ?? { coords, ids: [] };
+        group.ids.push(id);
+        groups.set(key, group);
+      }
+      for (const group of groups.values()) {
+        for (let i = 0; i < group.ids.length; i += 1000) {
+          await updateAssets({
+            ids: group.ids.slice(i, i + 1000),
+            latitude: group.coords.lat,
+            longitude: group.coords.lng,
+          });
+        }
+      }
+      const restored = new Map(entries);
+      setContextState((prev) => ({
+        ...prev,
+        assets: prev.assets.map((a) => {
+          const coords = restored.get(a.id);
+          return coords
+            ? { ...a, latitude: coords.lat, longitude: coords.lng }
+            : a;
+        }),
+      }));
+      toast({
+        title: `Restored the previous location of ${entries.length} ${entries.length === 1 ? "photo" : "photos"}`,
+      });
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to undo",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const applyCoordinates = async (ids: string[], coords: ILatLng) => {
     if (ids.length === 0) return;
     setSaving(true);
+    // Snapshot previous coordinates for Undo before overwriting.
+    const previous: Array<[string, ILatLng]> = assets
+      .filter(
+        (a) => ids.includes(a.id) && a.latitude != null && a.longitude != null
+      )
+      .map((a) => [a.id, { lat: a.latitude!, lng: a.longitude! }]);
     try {
       // One bulk call per 1000 ids — same chunking convention the workflow
       // engine uses against Immich's bulk endpoints.
@@ -233,22 +338,35 @@ export default function LocationManager() {
       if (gpsStatus === "notSet") {
         // They no longer match this filter — remove them, the same way
         // Missing Locations clears tagged photos from its list.
-        updateContext({
-          assets: assets.filter((a) => !ids.includes(a.id)),
+        setContextState((prev) => ({
+          ...prev,
+          assets: prev.assets.filter((a) => !ids.includes(a.id)),
           selectedIds: [],
-        });
+        }));
+        setTotal((t) => (t == null ? t : Math.max(0, t - ids.length)));
       } else {
-        updateContext({
-          assets: assets.map((a) =>
+        setContextState((prev) => ({
+          ...prev,
+          assets: prev.assets.map((a) =>
             ids.includes(a.id)
               ? { ...a, latitude: coords.lat, longitude: coords.lng }
               : a
           ),
-        });
+        }));
       }
+      const overwritten = previous.length;
       toast({
         title: `Location saved to ${ids.length} ${ids.length === 1 ? "photo" : "photos"}`,
-        description: formatCoordinates(coords),
+        description:
+          overwritten > 0 && overwritten < ids.length
+            ? `${formatCoordinates(coords)} — Undo restores the ${overwritten} that already had a location; the rest had none before.`
+            : formatCoordinates(coords),
+        action:
+          overwritten > 0 ? (
+            <ToastAction altText="Undo" onClick={() => undoApply(previous)}>
+              Undo
+            </ToastAction>
+          ) : undefined,
       });
     } catch {
       toast({
@@ -352,6 +470,16 @@ export default function LocationManager() {
     setFlyTo({ coords, zoom: 14, ts: Date.now() });
   };
 
+  // Map pin clicked → scroll the photo into view and flash it briefly.
+  const flashPhoto = (id: string) => {
+    setFlashedAssetId(id);
+    document
+      .querySelector(`[data-asset-id="${id}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashedAssetId(null), 1800);
+  };
+
   // Green/red GPS chip on every thumbnail (replaces the default
   // open-in-Immich corner link — the preview's toolbar has that instead).
   const renderGpsBadge = (photo: AssetPhoto) => {
@@ -373,10 +501,26 @@ export default function LocationManager() {
       : "Paste Map Location"
     : "Paste Location";
 
+  const hasDateFilter = !!(dateFrom || dateTo);
+
   return (
     <PageLayout className="!p-0 !mb-0 relative">
       <Header
-        leftComponent="Location Manager"
+        leftComponent={
+          <div className="flex items-baseline gap-2">
+            <span>Location Manager</span>
+            {total != null && (
+              <span className="text-xs font-normal text-muted-foreground whitespace-nowrap">
+                {total.toLocaleString()}{" "}
+                {gpsStatus === "notSet"
+                  ? "without location"
+                  : gpsStatus === "set"
+                    ? "with location"
+                    : "photos"}
+              </span>
+            )}
+          </div>
+        }
         rightComponent={
           <div className="flex items-center gap-2">
             <AlbumDropdown
@@ -399,6 +543,47 @@ export default function LocationManager() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={hasDateFilter ? "default" : "outline"}
+                  size="sm"
+                  title="Filter by date taken"
+                >
+                  <CalendarIcon size={16} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 flex flex-col gap-2">
+                <Label className="text-xs text-muted-foreground">
+                  Taken between
+                </Label>
+                <Input
+                  type="date"
+                  value={dateFrom ?? ""}
+                  onChange={(e) =>
+                    setFilters({ dateFrom: e.target.value || undefined })
+                  }
+                />
+                <Input
+                  type="date"
+                  value={dateTo ?? ""}
+                  onChange={(e) =>
+                    setFilters({ dateTo: e.target.value || undefined })
+                  }
+                />
+                {hasDateFilter && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setFilters({ dateFrom: undefined, dateTo: undefined })
+                    }
+                  >
+                    Clear dates
+                  </Button>
+                )}
+              </PopoverContent>
+            </Popover>
             <Button
               variant="default"
               size="sm"
@@ -409,12 +594,19 @@ export default function LocationManager() {
             >
               {sortOrder === "asc" ? <SortAsc size={16} /> : <SortDesc size={16} />}
             </Button>
-            {(albumId || gpsStatus !== "all") && (
+            {(albumId || gpsStatus !== "all" || hasDateFilter) && (
               <Button
                 variant="outline"
                 size="sm"
                 title="Clear filters"
-                onClick={() => setFilters({ albumId: undefined, gpsStatus: undefined })}
+                onClick={() =>
+                  setFilters({
+                    albumId: undefined,
+                    gpsStatus: undefined,
+                    dateFrom: undefined,
+                    dateTo: undefined,
+                  })
+                }
               >
                 <X size={16} />
               </Button>
@@ -437,16 +629,23 @@ export default function LocationManager() {
               <div className="flex flex-col gap-2 h-full justify-center items-center w-full">
                 <p className="text-lg">No photos match these filters</p>
                 <p className="text-sm text-muted-foreground">
-                  Try a different album or GPS status.
+                  Try a different album, GPS status, or date range.
                 </p>
               </div>
             ) : (
               <>
-                <AssetGrid assets={assets} selectable renderExtras={renderGpsBadge} />
+                <AssetGrid
+                  assets={assets}
+                  selectable
+                  renderExtras={renderGpsBadge}
+                  onPhotoHover={setHoveredAssetId}
+                  highlightedAssetId={flashedAssetId}
+                />
                 <div className="flex flex-col items-center gap-2 py-4">
                   <p className="text-xs text-muted-foreground">
-                    Showing {assets.length} item{assets.length === 1 ? "" : "s"}
-                    {hasMore ? " — more available" : ""}
+                    Showing {assets.length}
+                    {total != null ? ` of ${total.toLocaleString()}` : ""} item
+                    {(total ?? assets.length) === 1 ? "" : "s"}
                   </p>
                   {hasMore && (
                     <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
@@ -541,21 +740,51 @@ export default function LocationManager() {
                 )}
               </div>
             </div>
-            <FavoritesPane
-              pinCoords={selectedPinCoords}
-              selectedCount={selectedIds.length}
-              applying={saving}
-              onApply={handleApplyFavorite}
-              onShowOnMap={handleShowFavoriteOnMap}
-            />
+            <div className="px-3 py-2 border-b flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <FavoritesSheet
+                  favorites={favoritesState.favorites}
+                  loading={favoritesState.loading}
+                  busy={favoritesState.busy}
+                  pinCoords={selectedPinCoords}
+                  selectedCount={selectedIds.length}
+                  applying={saving}
+                  onAdd={favoritesState.add}
+                  onRename={favoritesState.rename}
+                  onDelete={favoritesState.remove}
+                  onReorder={favoritesState.reorder}
+                  onApply={handleApplyFavorite}
+                  onShowOnMap={handleShowFavoriteOnMap}
+                />
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Switch
+                  id="show-all-on-map"
+                  checked={showAllOnMap}
+                  onCheckedChange={setShowAllOnMap}
+                />
+                <Label
+                  htmlFor="show-all-on-map"
+                  className="text-xs text-muted-foreground cursor-pointer"
+                >
+                  Show all on map
+                </Label>
+              </div>
+            </div>
             <div className="flex-1 min-h-0">
               <LocationManagerMap
                 imagePins={imagePins}
+                allPins={allPins}
                 droppedPin={droppedPin}
                 selectedPin={selectedPin}
+                highlightedAssetId={hoveredAssetId}
                 isDarkMode={theme === "dark"}
                 onMapClick={handleMapClick}
-                onImagePinClick={(id) => setSelectedPin({ type: "image", id })}
+                onImagePinClick={(id) => {
+                  setSelectedPin({ type: "image", id });
+                  flashPhoto(id);
+                }}
+                onAllPinClick={flashPhoto}
                 onDroppedPinClick={() => setSelectedPin({ type: "dropped" })}
                 flyTo={flyTo}
               />
@@ -597,6 +826,30 @@ export default function LocationManager() {
                 >
                   <ClipboardCopy size={14} className="mr-1" /> Copy Image Location
                 </Button>
+                {favorites.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={saving}
+                        title="Apply a favourite location to the selected photos"
+                      >
+                        <Star size={14} className="mr-1" /> Favourites
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" side="top">
+                      {favorites.map((favorite) => (
+                        <DropdownMenuItem
+                          key={favorite.id}
+                          onSelect={() => handleApplyFavorite(favorite)}
+                        >
+                          {favorite.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 <Button
                   size="sm"
                   disabled={!clipboard || saving}

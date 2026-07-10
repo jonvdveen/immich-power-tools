@@ -129,6 +129,21 @@ unified copy/paste clipboard between the two.
   desyncing the image pin from stored EXIF. After a bulk write under the
   "Location Not Set" filter, updated photos are removed from the grid
   (Missing Locations precedent).
+- Enhancement batch (2026-07-10, all six suggestions accepted + two user
+  additions): Undo on bulk writes (toast action; restores previous coords —
+  photos that had NO location can't be reverted because Immich's API
+  rejects null lat/lng, verified in its compiled zod schema
+  `latitudeSchema = z.number().min(-90).max(90)`, so the Undo button only
+  appears when ≥1 photo is revertible); "Show all on map" switch (loaded
+  photos with GPS as violet CircleMarker dots); total count in header +
+  "Showing X of Y" footer (COUNT query on page 1 only); date-range filter
+  (calendar popover, dateFrom/dateTo in URL); grid↔map hover linkage
+  (hover photo → cyan ring on its pin; click any pin/dot → scroll-to +
+  cyan flash in grid, incl. lazy placeholders via data-asset-id);
+  Favourites moved from a fixed pane to a slide-out Sheet with
+  drag-to-reorder (persisted via new `sort_order` column, migration 0006,
+  + PUT /api/location-favorites/reorder) plus Move up/down menu items;
+  Favourites quick-apply dropdown in the floating bar.
 - Refinement pass (2026-07-10, user-directed): single-photo map zoom 10→13;
   GPS filter is now a segmented Tabs toggle (All / ✓GPS / ✗GPS) instead of a
   Select; grid reverted from the custom clickToSelect mode to AssetGrid's
