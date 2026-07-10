@@ -111,11 +111,6 @@ grid: album + GPS status) + Map (image pins for selected photos, one
 dropped/candidate pin, Nominatim search, editable coordinate boxes) with a
 unified copy/paste clipboard between the two.
 
-- **LOC-1**: Location Presets component — explicitly deferred from the MVP.
-  Natural extension points left in place: the `IClipboard` state in
-  `location-manager.tsx` (a preset is just a named clipboard entry) and the
-  existing `RecentSearches`/`addRecentSearch` localStorage pattern from the
-  Tag-Location dialog would fit a preset store directly.
 - **LOC-2**: Clearing/removing GPS from an image — confirmed out of scope
   for now, natural fit later (Immich's bulk update accepts null lat/lng).
 - Decisions documented for the record (all confirmed or delegated by user):
@@ -134,6 +129,14 @@ unified copy/paste clipboard between the two.
   desyncing the image pin from stored EXIF. After a bulk write under the
   "Location Not Set" filter, updated photos are removed from the grid
   (Missing Locations precedent).
+- Favourites (added 2026-07-10, was LOC-1 "Location Presets"): per-user
+  named locations ("Home") in a pane above the map — add (saves the
+  currently selected pin), rename inline, one-click Apply to selected
+  photos, delete with confirm; row click previews on the map. Stored
+  **server-side** in app.db (`location_favorites`, migration 0005,
+  owner-scoped like workflows) rather than localStorage, so favourites
+  follow the user across browsers/devices — 16-user household made
+  per-browser storage the wrong default.
 
 ## Documentation
 

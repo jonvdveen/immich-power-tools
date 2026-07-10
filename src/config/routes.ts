@@ -57,6 +57,8 @@ export const LIST_EMPTY_VIDEOS_PATH = BASE_API_ENDPOINT + "/assets/empty-videos"
 export const LIST_ORPHAN_ASSETS_PATH = BASE_API_ENDPOINT + "/assets/orphan-finder";
 export const LIST_CULL_ASSETS_PATH = BASE_API_ENDPOINT + "/assets/cull-assets";
 export const LIST_LOCATION_MANAGER_ASSETS_PATH = BASE_API_ENDPOINT + "/assets/location-manager-assets";
+export const LOCATION_FAVORITES_PATH = BASE_API_ENDPOINT + "/location-favorites";
+export const LOCATION_FAVORITE_PATH = (id: string) => BASE_API_ENDPOINT + "/location-favorites/" + id;
 export const ASSET_DETAIL_PATH = (id: string) => BASE_API_ENDPOINT + "/assets/" + id + "/detail";
 
 

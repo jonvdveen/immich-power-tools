@@ -3,7 +3,9 @@ import AlbumDropdown from "@/components/shared/AlbumDropdown";
 import FloatingBar from "@/components/shared/FloatingBar";
 import Header from "@/components/shared/Header";
 import PageLayout from "@/components/layouts/PageLayout";
+import FavoritesPane from "@/components/location-manager/FavoritesPane";
 import LocationSearchBox from "@/components/location-manager/LocationSearchBox";
+import { ILocationFavorite } from "@/handlers/api/locationFavorite.handler";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -342,6 +344,20 @@ export default function LocationManager() {
     setFlyTo({ coords, zoom: 14, ts: Date.now() });
   };
 
+  const handleApplyFavorite = (favorite: ILocationFavorite) => {
+    applyCoordinates(selectedIds, {
+      lat: favorite.latitude,
+      lng: favorite.longitude,
+    });
+  };
+
+  const handleShowFavoriteOnMap = (favorite: ILocationFavorite) => {
+    const coords = { lat: favorite.latitude, lng: favorite.longitude };
+    setDroppedPin(coords);
+    setSelectedPin({ type: "dropped" });
+    setFlyTo({ coords, zoom: 14, ts: Date.now() });
+  };
+
   const pasteLabel = clipboard
     ? clipboard.source === "image"
       ? "Paste Image Location"
@@ -513,6 +529,13 @@ export default function LocationManager() {
                 )}
               </div>
             </div>
+            <FavoritesPane
+              pinCoords={selectedPinCoords}
+              selectedCount={selectedIds.length}
+              applying={saving}
+              onApply={handleApplyFavorite}
+              onShowOnMap={handleShowFavoriteOnMap}
+            />
             <div className="flex-1 min-h-0">
               <LocationManagerMap
                 imagePins={imagePins}
