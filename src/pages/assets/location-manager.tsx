@@ -46,10 +46,13 @@ import type {
 import {
   Calendar as CalendarIcon,
   Check,
+  ChevronDown,
+  ChevronUp,
   ClipboardCopy,
   ClipboardPaste,
   Expand,
   Hourglass,
+  Plus,
   SortAsc,
   SortDesc,
   Star,
@@ -123,6 +126,10 @@ export default function LocationManager() {
   const [imageCoordsError, setImageCoordsError] = useState(false);
   const [mapCoordsDraft, setMapCoordsDraft] = useState("");
   const [mapCoordsError, setMapCoordsError] = useState(false);
+
+  // Quick "Add favourite" popover (right panel; saves the selected pin)
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddName, setQuickAddName] = useState("");
 
   // Grid ↔ map linkage
   const [showAllOnMap, setShowAllOnMap] = useState(false);
@@ -464,6 +471,21 @@ export default function LocationManager() {
     });
   };
 
+  const handleQuickAdd = async () => {
+    const name = quickAddName.trim();
+    if (!name || !selectedPinCoords) return;
+    if (await favoritesState.add(name, selectedPinCoords)) {
+      setQuickAddOpen(false);
+      setQuickAddName("");
+    }
+  };
+
+  // The quick-add form saves the selected pin — close it if that pin goes away.
+  useEffect(() => {
+    if (!selectedPinCoords) setQuickAddOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPinCoords === null]);
+
   const handleShowFavoriteOnMap = (favorite: ILocationFavorite) => {
     const coords = { lat: favorite.latitude, lng: favorite.longitude };
     setDroppedPin(coords);
@@ -761,24 +783,96 @@ export default function LocationManager() {
                 )}
               </div>
             </div>
-            <div className="px-3 py-2 border-b flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <FavoritesSheet
-                  favorites={favoritesState.favorites}
-                  loading={favoritesState.loading}
-                  busy={favoritesState.busy}
-                  pinCoords={selectedPinCoords}
-                  selectedCount={selectedIds.length}
-                  applying={saving}
-                  onAdd={favoritesState.add}
-                  onRename={favoritesState.rename}
-                  onDelete={favoritesState.remove}
-                  onReorder={favoritesState.reorder}
-                  onApply={handleApplyFavorite}
-                  onShowOnMap={handleShowFavoriteOnMap}
-                />
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
+            <div className="px-3 py-2 border-b flex items-center gap-2 flex-wrap">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={favorites.length === 0 || selectedIds.length === 0 || saving}
+                    title={
+                      favorites.length === 0
+                        ? "No favourites saved yet"
+                        : selectedIds.length === 0
+                          ? "Select photos first"
+                          : "Apply a favourite location to the selected photos"
+                    }
+                  >
+                    <Star size={14} className="mr-1" /> Apply favourite
+                    <ChevronDown size={14} className="ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {favorites.map((favorite) => (
+                    <DropdownMenuItem
+                      key={favorite.id}
+                      onSelect={() => handleApplyFavorite(favorite)}
+                    >
+                      {favorite.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Popover open={quickAddOpen} onOpenChange={setQuickAddOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!selectedPinCoords}
+                    title={
+                      selectedPinCoords
+                        ? "Save the selected pin as a favourite"
+                        : "Drop or select a pin on the map first"
+                    }
+                  >
+                    <Plus size={14} className="mr-1" /> Add favourite
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-72 flex flex-col gap-2">
+                  <Label className="text-xs text-muted-foreground">
+                    Name this location
+                    {selectedPinCoords
+                      ? ` (${formatCoordinates(selectedPinCoords)})`
+                      : ""}
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      autoFocus
+                      value={quickAddName}
+                      placeholder="e.g. Home"
+                      className="h-8 text-sm"
+                      onChange={(e) => setQuickAddName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleQuickAdd();
+                        if (e.key === "Escape") setQuickAddOpen(false);
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 shrink-0"
+                      disabled={!quickAddName.trim() || favoritesState.busy}
+                      onClick={handleQuickAdd}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <FavoritesSheet
+                favorites={favoritesState.favorites}
+                loading={favoritesState.loading}
+                busy={favoritesState.busy}
+                pinCoords={selectedPinCoords}
+                selectedCount={selectedIds.length}
+                applying={saving}
+                onAdd={favoritesState.add}
+                onRename={favoritesState.rename}
+                onDelete={favoritesState.remove}
+                onReorder={favoritesState.reorder}
+                onApply={handleApplyFavorite}
+                onShowOnMap={handleShowFavoriteOnMap}
+              />
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
                 <Switch
                   id="show-all-on-map"
                   checked={showAllOnMap}
@@ -857,6 +951,7 @@ export default function LocationManager() {
                         title="Apply a favourite location to the selected photos"
                       >
                         <Star size={14} className="mr-1" /> Favourites
+                        <ChevronUp size={14} className="ml-1" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" side="top">

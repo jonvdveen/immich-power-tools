@@ -28,6 +28,7 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  Settings2,
   Star,
   Trash2,
   X,
@@ -235,11 +236,11 @@ export default function FavoritesSheet({
       }}
     >
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full justify-start">
-          <Star size={14} className="mr-2" />
-          Favourites
+        <Button variant="outline" size="sm" title="Add, rename, reorder, or delete your favourite locations">
+          <Settings2 size={14} className="mr-1" />
+          Manage favourites
           {favorites.length > 0 && (
-            <span className="ml-auto text-xs text-muted-foreground">
+            <span className="ml-1.5 text-xs text-muted-foreground">
               {favorites.length}
             </span>
           )}
