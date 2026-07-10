@@ -48,6 +48,7 @@ import {
   Check,
   ClipboardCopy,
   ClipboardPaste,
+  Expand,
   Hourglass,
   SortAsc,
   SortDesc,
@@ -480,18 +481,37 @@ export default function LocationManager() {
     flashTimer.current = setTimeout(() => setFlashedAssetId(null), 1800);
   };
 
-  // Green/red GPS chip on every thumbnail (replaces the default
-  // open-in-Immich corner link — the preview's toolbar has that instead).
-  const renderGpsBadge = (photo: AssetPhoto) => {
+  // Per-thumbnail overlays: green/red GPS chip (bottom-left) and an expand
+  // button (bottom-right) that opens the large preview — clicking the photo
+  // itself selects it and shows its pin on the map.
+  const renderThumbnailExtras = (
+    photo: AssetPhoto,
+    actions: { openPreview: () => void }
+  ) => {
     const hasGps = photo.latitude != null && photo.longitude != null;
     return (
-      <div
-        className={`absolute bottom-1 left-1 flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-white pointer-events-none ${
-          hasGps ? "bg-green-600/85" : "bg-red-600/85"
-        }`}
-      >
-        {hasGps ? <Check size={10} /> : <X size={10} />} GPS
-      </div>
+      <>
+        <div
+          className={`absolute bottom-1 left-1 flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-white pointer-events-none ${
+            hasGps ? "bg-green-600/85" : "bg-red-600/85"
+          }`}
+        >
+          {hasGps ? <Check size={10} /> : <X size={10} />} GPS
+        </div>
+        <button
+          type="button"
+          title="Preview"
+          className={`absolute right-1 bg-black/60 hover:bg-black/80 p-1 rounded ${
+            photo.isVideo ? "bottom-8" : "bottom-1"
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            actions.openPreview();
+          }}
+        >
+          <Expand className="h-3.5 w-3.5 text-white" />
+        </button>
+      </>
     );
   };
 
@@ -637,7 +657,8 @@ export default function LocationManager() {
                 <AssetGrid
                   assets={assets}
                   selectable
-                  renderExtras={renderGpsBadge}
+                  clickToSelect
+                  renderExtras={renderThumbnailExtras}
                   onPhotoHover={setHoveredAssetId}
                   highlightedAssetId={flashedAssetId}
                 />

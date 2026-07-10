@@ -42,8 +42,12 @@ interface AssetGridProps {
   assets: IAsset[];
   isInternal?: boolean;
   selectable?: boolean;
+  /** Selection-first click mode: plain click selects just that photo,
+   *  cmd/ctrl toggles it, shift extends a range. The preview only opens
+   *  via renderExtras' openPreview action (or double-click). */
+  clickToSelect?: boolean;
   /** Per-thumbnail overlay content; defaults to the open-in-Immich link. */
-  renderExtras?: (photo: AssetPhoto) => React.ReactNode;
+  renderExtras?: (photo: AssetPhoto, actions: { openPreview: () => void }) => React.ReactNode;
   /** Reports the photo id under the cursor (null when leaving). */
   onPhotoHover?: (id: string | null) => void;
   /** Photo to flash with a cyan ring (e.g. its map pin was clicked). */
@@ -59,7 +63,7 @@ interface AssetGridRef {
   unselectAll: () => void;
 }
 
-const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal = true, selectable = false, renderExtras, onPhotoHover, highlightedAssetId, onSelectionChange, onDeleteAsset, onFavoriteAsset }, ref) => {
+const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal = true, selectable = false, clickToSelect = false, renderExtras, onPhotoHover, highlightedAssetId, onSelectionChange, onDeleteAsset, onFavoriteAsset }, ref) => {
   const [index, setIndex] = useState(-1);
   const [lastSelectedIndex, setLastSelectedIndex] = useState(-1);
   const [showInfoPanel, setShowInfoPanel] = useState(() => {
@@ -157,7 +161,36 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
     }
   };
 
+  const handleClickToSelect = (asset: AssetPhoto, event: React.MouseEvent) => {
+    const clickedIndex = images.findIndex((image) => image.id === asset.id);
+    let newSelectedIds: string[];
+    if (event.shiftKey && lastSelectedIndex >= 0) {
+      const startIndex = Math.min(clickedIndex, lastSelectedIndex);
+      const endIndex = Math.max(clickedIndex, lastSelectedIndex);
+      const rangeIds = images.slice(startIndex, endIndex + 1).map((image) => image.id);
+      newSelectedIds = [...new Set([...selectedIds, ...rangeIds])];
+    } else if (event.metaKey || event.ctrlKey) {
+      newSelectedIds = selectedIds.includes(asset.id)
+        ? selectedIds.filter((id) => id !== asset.id)
+        : [...selectedIds, asset.id];
+    } else {
+      // Plain click selects just this photo; clicking the sole selected photo deselects it.
+      newSelectedIds = selectedIds.length === 1 && selectedIds[0] === asset.id ? [] : [asset.id];
+    }
+    updateContext({ selectedIds: newSelectedIds });
+    onSelectionChange?.(newSelectedIds);
+    setLastSelectedIndex(clickedIndex);
+  };
+
   const handleClick = (index: number, asset: AssetPhoto, event: React.MouseEvent) => {
+    if (clickToSelect && selectable) {
+      if (event.detail >= 2) {
+        setIndex(index);
+      } else {
+        handleClickToSelect(asset, event);
+      }
+      return;
+    }
     if (selectable && (event.metaKey || event.ctrlKey || selectedIds.length > 0)) {
       handleSelect(index, asset, event);
     } else {
@@ -370,9 +403,9 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
         onClick={({ index, event, photo }) => handleClick(index, photo, event)}
         render={{
           image: renderImage,
-          extras: (_, { photo }) =>
+          extras: (_, { photo, index }) =>
             renderExtras ? (
-              renderExtras(photo)
+              renderExtras(photo, { openPreview: () => setIndex(index) })
             ) : (
               <a
                 href={exImmichUrl + "/photos/" + photo.id}

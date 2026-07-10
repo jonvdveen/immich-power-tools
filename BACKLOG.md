@@ -146,14 +146,16 @@ unified copy/paste clipboard between the two.
   Favourites quick-apply dropdown in the floating bar.
 - Refinement pass (2026-07-10, user-directed): single-photo map zoom 10→13;
   GPS filter is now a segmented Tabs toggle (All / ✓GPS / ✗GPS) instead of a
-  Select; grid reverted from the custom clickToSelect mode to AssetGrid's
-  standard behavior (click = preview lightbox with its open-in-Immich
-  toolbar button; selection via hover-checkbox / cmd-click / shift-range) —
-  clickToSelect removed from AssetGrid again, replaced by a generic
-  `renderExtras` prop that Location Manager uses for per-thumbnail green
-  ✓GPS / red ✗GPS badges (replacing the corner Immich link); favourite rows
-  moved Rename/Delete behind a ⋮ menu (TagRow's deferred-AlertDialog
-  pattern); floating bar now always offers Deselect all.
+  Select; favourite rows moved Rename/Delete behind a ⋮ menu (TagRow's
+  deferred-AlertDialog pattern); floating bar now always offers Deselect
+  all. Click behavior flip-flopped in this pass: briefly reverted to
+  "click = preview" (AssetGrid standard), then the user corrected course —
+  final state is clickToSelect restored (click = select + pin on map,
+  double-click still previews) with an explicit Expand button at each
+  thumbnail's bottom-right opening the preview lightbox (whose toolbar has
+  Open in Immich). `renderExtras(photo, { openPreview })` on AssetGrid is
+  the generic hook carrying the green ✓GPS / red ✗GPS badge + Expand
+  button (the default corner Immich link is replaced on this page).
 - Favourites (added 2026-07-10, was LOC-1 "Location Presets"): per-user
   named locations ("Home") in a pane above the map — add (saves the
   currently selected pin), rename inline, one-click Apply to selected
