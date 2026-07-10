@@ -29,6 +29,7 @@ export const sidebarGroups: SidebarGroup[] = [
       { title: "Rate & Cull", link: "/assets/cull", icon: <Star className="h-4 w-4" />, badge: "Beta" },
       { title: "Tag Manager", link: "/tags", icon: <Tags className="h-4 w-4" />, badge: "Beta" },
       { title: "Potential Albums", link: "/albums/potential-albums", icon: <GalleryVerticalEnd className="h-4 w-4" /> },
+      { title: "Location Manager", link: "/assets/location-manager", icon: <MapPin className="h-4 w-4" />, badge: "Beta" },
       { title: "Missing Locations", link: "/assets/missing-locations", icon: <MapPinX className="h-4 w-4" /> },
       { title: "Empty Videos", link: "/assets/empty-videos", icon: <Video className="h-4 w-4" /> },
       { title: "Bulk Duplicate Finder", link: "/assets/bulk-duplicate-finder", icon: <Copy className="h-4 w-4" /> },

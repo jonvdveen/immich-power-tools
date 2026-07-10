@@ -6,6 +6,7 @@ import {
   LIST_MISSING_LOCATION_ALBUMS_PATH,
   LIST_MISSING_LOCATION_ASSETS_PATH,
   LIST_MISSING_LOCATION_DATES_PATH,
+  LIST_LOCATION_MANAGER_ASSETS_PATH,
   UPDATE_ASSETS_PATH,
   LIST_DUPLICATES_PATH,
   LIST_ORPHAN_ASSETS_PATH,
@@ -48,6 +49,27 @@ export const listMissingLocationAssets = async (
   );
 };
 
+
+export interface ILocationManagerFilters {
+  albumId?: string;
+  gpsStatus?: "all" | "set" | "notSet";
+  page?: number;
+  sortOrder?: "asc" | "desc";
+}
+
+export interface ILocationManagerAssetsResponse {
+  assets: IAsset[];
+  hasMore: boolean;
+}
+
+export const listLocationManagerAssets = async (
+  filters: ILocationManagerFilters
+): Promise<ILocationManagerAssetsResponse> => {
+  return API.get(LIST_LOCATION_MANAGER_ASSETS_PATH, filters).then((res) => ({
+    ...res,
+    assets: res.assets.map(cleanUpAsset),
+  }));
+};
 
 export interface IUpdateAssetsParams {
   ids: string[];

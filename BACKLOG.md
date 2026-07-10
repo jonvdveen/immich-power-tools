@@ -103,6 +103,38 @@ context in project memory (`immich-power-tools-cull.md`,
   `AlertDialog` ref-imperative pattern (`PersonItem.tsx` precedent) rather
   than as a visible nested trigger, for the same reason.
 
+## Location Manager (`/assets/location-manager`)
+
+New module built 2026-07-10, intended to eventually replace Missing
+Locations (which stays untouched until then). MVP = Media Viewer (filtered
+grid: album + GPS status) + Map (image pins for selected photos, one
+dropped/candidate pin, Nominatim search, editable coordinate boxes) with a
+unified copy/paste clipboard between the two.
+
+- **LOC-1**: Location Presets component — explicitly deferred from the MVP.
+  Natural extension points left in place: the `IClipboard` state in
+  `location-manager.tsx` (a preset is just a named clipboard entry) and the
+  existing `RecentSearches`/`addRecentSearch` localStorage pattern from the
+  Tag-Location dialog would fit a preset store directly.
+- **LOC-2**: Clearing/removing GPS from an image — confirmed out of scope
+  for now, natural fit later (Immich's bulk update accepts null lat/lng).
+- Decisions documented for the record (all confirmed or delegated by user):
+  "Location Not Set" = `exif.latitude IS NULL` via left join, identical to
+  Missing Locations. Writes via Immich bulk `PUT /assets` (user's own
+  session, 1000/req chunks). Grid = `AssetGrid` with new `clickToSelect`
+  mode (plain click selects one, shift = range, cmd/ctrl = toggle — the
+  non-contiguous multi-select came free, so it's in; double-click opens
+  preview). Pagination = 500/page "Load more" (largest household library
+  has 32.7k missing-GPS assets, unpaginated was not viable). Album filter
+  single-select, sort newest-first with toggle, filters live in the URL
+  query string (Face Review lesson: survives refresh). Typing in a
+  coordinate box does NOT update the paste clipboard — only the explicit
+  Copy buttons do; editing the Map Coordinates box while an image pin is
+  selected detaches the edit into the dropped/candidate pin rather than
+  desyncing the image pin from stored EXIF. After a bulk write under the
+  "Location Not Set" filter, updated photos are removed from the grid
+  (Missing Locations precedent).
+
 ## Documentation
 
 - Fixed 2026-07-07: a friend followed the GitHub repo's install
