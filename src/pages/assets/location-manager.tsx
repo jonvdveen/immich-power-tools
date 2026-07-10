@@ -1,4 +1,4 @@
-import AssetGrid from "@/components/shared/AssetGrid";
+import AssetGrid, { AssetPhoto } from "@/components/shared/AssetGrid";
 import AlbumDropdown from "@/components/shared/AlbumDropdown";
 import FloatingBar from "@/components/shared/FloatingBar";
 import Header from "@/components/shared/Header";
@@ -9,13 +9,7 @@ import { ILocationFavorite } from "@/handlers/api/locationFavorite.handler";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/use-toast";
 import PhotoSelectionContext, {
   IPhotoSelectionContext,
@@ -36,7 +30,7 @@ import type {
   ISelectedPin,
 } from "@/components/location-manager/LocationManagerMap";
 import { IAsset } from "@/types/asset";
-import { ClipboardCopy, ClipboardPaste, Hourglass, SortAsc, SortDesc, X } from "lucide-react";
+import { Check, ClipboardCopy, ClipboardPaste, Hourglass, SortAsc, SortDesc, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/router";
 import { useTheme } from "next-themes";
@@ -358,6 +352,21 @@ export default function LocationManager() {
     setFlyTo({ coords, zoom: 14, ts: Date.now() });
   };
 
+  // Green/red GPS chip on every thumbnail (replaces the default
+  // open-in-Immich corner link — the preview's toolbar has that instead).
+  const renderGpsBadge = (photo: AssetPhoto) => {
+    const hasGps = photo.latitude != null && photo.longitude != null;
+    return (
+      <div
+        className={`absolute bottom-1 left-1 flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-white pointer-events-none ${
+          hasGps ? "bg-green-600/85" : "bg-red-600/85"
+        }`}
+      >
+        {hasGps ? <Check size={10} /> : <X size={10} />} GPS
+      </div>
+    );
+  };
+
   const pasteLabel = clipboard
     ? clipboard.source === "image"
       ? "Paste Image Location"
@@ -374,19 +383,22 @@ export default function LocationManager() {
               albumIds={albumId ? [albumId] : []}
               onChange={(albumIds) => setFilters({ albumId: albumIds?.[0] })}
             />
-            <Select
+            <Tabs
               value={gpsStatus}
-              onValueChange={(value) => setFilters({ gpsStatus: value })}
+              onValueChange={(value) =>
+                setFilters({ gpsStatus: value === "all" ? undefined : value })
+              }
             >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="GPS status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Images</SelectItem>
-                <SelectItem value="set">Location Set</SelectItem>
-                <SelectItem value="notSet">Location Not Set</SelectItem>
-              </SelectContent>
-            </Select>
+              <TabsList>
+                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="set">
+                  <Check size={14} className="mr-1 text-green-600" /> GPS
+                </TabsTrigger>
+                <TabsTrigger value="notSet">
+                  <X size={14} className="mr-1 text-red-600" /> GPS
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             <Button
               variant="default"
               size="sm"
@@ -430,7 +442,7 @@ export default function LocationManager() {
               </div>
             ) : (
               <>
-                <AssetGrid assets={assets} selectable clickToSelect />
+                <AssetGrid assets={assets} selectable renderExtras={renderGpsBadge} />
                 <div className="flex flex-col items-center gap-2 py-4">
                   <p className="text-xs text-muted-foreground">
                     Showing {assets.length} item{assets.length === 1 ? "" : "s"}
@@ -558,15 +570,7 @@ export default function LocationManager() {
                 {selectedIds.length} Selected
               </p>
               <div className="flex items-center gap-2">
-                {selectedIds.length === assets.length ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => updateContext({ selectedIds: [] })}
-                  >
-                    Unselect all
-                  </Button>
-                ) : (
+                {selectedIds.length < assets.length && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -577,6 +581,13 @@ export default function LocationManager() {
                     Select all
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => updateContext({ selectedIds: [] })}
+                >
+                  Deselect all
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"

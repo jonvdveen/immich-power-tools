@@ -75,7 +75,8 @@ function FitToPins({ imagePins }: { imagePins: IImagePin[] }) {
   useEffect(() => {
     if (imagePins.length === 0) return;
     if (imagePins.length === 1) {
-      map.setView([imagePins[0].lat, imagePins[0].lng], Math.max(map.getZoom(), 10));
+      // Street-ish level for a lone photo — city level (10) was too far out.
+      map.setView([imagePins[0].lat, imagePins[0].lng], Math.max(map.getZoom(), 13));
     } else {
       map.fitBounds(
         L.latLngBounds(imagePins.map((p) => [p.lat, p.lng] as [number, number])),

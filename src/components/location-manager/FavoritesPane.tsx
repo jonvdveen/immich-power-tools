@@ -1,5 +1,12 @@
-import { AlertDialog } from "@/components/ui/alert-dialog";
+import { AlertDialog, IAlertDialogActions } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/use-toast";
 import {
@@ -10,8 +17,17 @@ import {
   updateLocationFavorite,
 } from "@/handlers/api/locationFavorite.handler";
 import { formatCoordinates, ILatLng } from "@/lib/location-manager/coordinates";
-import { Check, Loader2, Pencil, Plus, Star, Trash2, X } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import {
+  Check,
+  Loader2,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 
 interface FavoritesPaneProps {
   /** Coordinates of the currently selected pin — the source for "Add". */
@@ -23,6 +39,85 @@ interface FavoritesPaneProps {
   onApply: (favorite: ILocationFavorite) => void;
   /** Row click: preview the favourite on the map (drops the candidate pin there). */
   onShowOnMap: (favorite: ILocationFavorite) => void;
+}
+
+function FavoriteRow({
+  favorite,
+  selectedCount,
+  applying,
+  onApply,
+  onShowOnMap,
+  onRename,
+  onDelete,
+}: {
+  favorite: ILocationFavorite;
+  selectedCount: number;
+  applying: boolean;
+  onApply: (favorite: ILocationFavorite) => void;
+  onShowOnMap: (favorite: ILocationFavorite) => void;
+  onRename: (favorite: ILocationFavorite) => void;
+  onDelete: (favorite: ILocationFavorite) => void;
+}) {
+  const deleteDialogRef = useRef<IAlertDialogActions>(null);
+
+  return (
+    <div className="flex items-center gap-1 py-0.5">
+      <button
+        type="button"
+        className="flex-1 min-w-0 text-left text-sm truncate hover:underline"
+        title={`Show on map (${formatCoordinates({ lat: favorite.latitude, lng: favorite.longitude })})`}
+        onClick={() => onShowOnMap(favorite)}
+      >
+        {favorite.name}
+      </button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 px-2 shrink-0"
+        disabled={selectedCount === 0 || applying}
+        title={
+          selectedCount === 0
+            ? "Select photos first"
+            : `Set "${favorite.name}" as the location of ${selectedCount} selected photo${selectedCount === 1 ? "" : "s"}`
+        }
+        onClick={() => onApply(favorite)}
+      >
+        Apply
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 shrink-0"
+            title="More actions"
+          >
+            <MoreVertical size={14} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => onRename(favorite)}>
+            <Pencil size={14} className="mr-2" /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            // Deferred: opening the dialog synchronously from onSelect races
+            // the DropdownMenu's own close/focus-return (TagRow precedent).
+            onSelect={() => setTimeout(() => deleteDialogRef.current?.open(), 0)}
+          >
+            <Trash2 size={14} className="mr-2" /> Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog
+        ref={deleteDialogRef}
+        title={`Delete favourite "${favorite.name}"?`}
+        description="This only removes the saved favourite — photos keep whatever location they already have."
+        onConfirm={() => onDelete(favorite)}
+      />
+    </div>
+  );
 }
 
 export default function FavoritesPane({
@@ -212,59 +307,19 @@ export default function FavoritesPane({
                 </Button>
               </div>
             ) : (
-              <div
+              <FavoriteRow
                 key={favorite.id}
-                className="group flex items-center gap-1 py-0.5"
-              >
-                <button
-                  type="button"
-                  className="flex-1 min-w-0 text-left text-sm truncate hover:underline"
-                  title={`Show on map (${formatCoordinates({ lat: favorite.latitude, lng: favorite.longitude })})`}
-                  onClick={() => onShowOnMap(favorite)}
-                >
-                  {favorite.name}
-                </button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2 shrink-0"
-                  disabled={selectedCount === 0 || applying}
-                  title={
-                    selectedCount === 0
-                      ? "Select photos first"
-                      : `Set "${favorite.name}" as the location of ${selectedCount} selected photo${selectedCount === 1 ? "" : "s"}`
-                  }
-                  onClick={() => onApply(favorite)}
-                >
-                  Apply
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                  title="Rename"
-                  onClick={() => {
-                    setRenamingId(favorite.id);
-                    setRenameDraft(favorite.name);
-                  }}
-                >
-                  <Pencil size={13} />
-                </Button>
-                <AlertDialog
-                  title={`Delete favourite "${favorite.name}"?`}
-                  description="This only removes the saved favourite — photos keep whatever location they already have."
-                  onConfirm={() => handleDelete(favorite)}
-                >
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                    title="Delete"
-                  >
-                    <Trash2 size={13} />
-                  </Button>
-                </AlertDialog>
-              </div>
+                favorite={favorite}
+                selectedCount={selectedCount}
+                applying={applying}
+                onApply={onApply}
+                onShowOnMap={onShowOnMap}
+                onRename={(f) => {
+                  setRenamingId(f.id);
+                  setRenameDraft(f.name);
+                }}
+                onDelete={handleDelete}
+              />
             )
           )
         )}

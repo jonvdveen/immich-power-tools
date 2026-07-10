@@ -129,6 +129,16 @@ unified copy/paste clipboard between the two.
   desyncing the image pin from stored EXIF. After a bulk write under the
   "Location Not Set" filter, updated photos are removed from the grid
   (Missing Locations precedent).
+- Refinement pass (2026-07-10, user-directed): single-photo map zoom 10→13;
+  GPS filter is now a segmented Tabs toggle (All / ✓GPS / ✗GPS) instead of a
+  Select; grid reverted from the custom clickToSelect mode to AssetGrid's
+  standard behavior (click = preview lightbox with its open-in-Immich
+  toolbar button; selection via hover-checkbox / cmd-click / shift-range) —
+  clickToSelect removed from AssetGrid again, replaced by a generic
+  `renderExtras` prop that Location Manager uses for per-thumbnail green
+  ✓GPS / red ✗GPS badges (replacing the corner Immich link); favourite rows
+  moved Rename/Delete behind a ⋮ menu (TagRow's deferred-AlertDialog
+  pattern); floating bar now always offers Deselect all.
 - Favourites (added 2026-07-10, was LOC-1 "Location Presets"): per-user
   named locations ("Home") in a pane above the map — add (saves the
   currently selected pin), rename inline, one-click Apply to selected
