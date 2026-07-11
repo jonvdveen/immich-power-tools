@@ -3,7 +3,7 @@ import "react-photo-album/rows.css";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, CheckCircle2, ChevronLeft, ChevronRight, Circle, ExternalLink, Glasses, Heart, Info,
-  Loader2, SortAsc, SortDesc, Star, StarOff, Trash2, X, XCircle,
+  Loader2, SortAsc, SortDesc, Star, Trash2, X, XCircle,
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
@@ -452,6 +452,20 @@ export default function CullPhotosPage() {
   // inside the extras renderer was O(n) per photo, O(n²) per grid render.
   const assetsById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
 
+  // The one rating every selected photo shares (null when mixed or unrated) —
+  // lets the bulk bar's stars show the current state, so clicking the lit
+  // star clears it (replacing the old dedicated clear-rating button).
+  const sharedSelectedRating = useMemo(() => {
+    if (!selectedIds.length) return null;
+    let shared: number | null | undefined;
+    for (const id of selectedIds) {
+      const rating = assetsById.get(id)?.rating ?? null;
+      if (shared === undefined) shared = rating;
+      else if (rating !== shared) return null;
+    }
+    return shared ?? null;
+  }, [selectedIds, assetsById]);
+
   const handleSelect = (photo: AssetPhoto, event: React.MouseEvent) => {
     const clickedIndex = images.findIndex((i) => i.id === photo.id);
     if (event.shiftKey && lastSelectedIndex >= 0) {
@@ -580,6 +594,22 @@ export default function CullPhotosPage() {
               ))}
             </>
           )}
+          <Button
+            size="sm" variant="outline" className="h-8"
+            title="Select every loaded photo (Cmd/Ctrl+A)"
+            disabled={!assets.length || selectedIds.length === assets.length}
+            onClick={() => setSelectedIds(assets.map((a) => a.id))}
+          >
+            Select all
+          </Button>
+          <Button
+            size="sm" variant="outline" className="h-8"
+            title="Deselect all (Esc)"
+            disabled={!selectedIds.length}
+            onClick={() => setSelectedIds([])}
+          >
+            Deselect all
+          </Button>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {/* Pick status — multi-select */}
             <div className="flex items-center gap-0.5 rounded-md border p-0.5">
@@ -721,53 +751,63 @@ export default function CullPhotosPage() {
       {selectionActive && viewerIndex === null && (
         <FloatingBar className="!max-w-4xl flex-wrap gap-2">
           <span className="px-2 text-sm font-semibold whitespace-nowrap">{selectedIds.length} selected</span>
-          {selectedIds.length < assets.length && (
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Select every loaded photo (Cmd/Ctrl+A)" onClick={() => setSelectedIds(assets.map((a) => a.id))}>
-              Select all
+          {/* Rating — shows the selection's shared rating; clicking the lit
+              star clears it (no separate clear-rating button). */}
+          <div className="flex items-center rounded-md border p-0.5">
+            <StarRow
+              value={sharedSelectedRating}
+              size={16}
+              onRate={(n) => rateAssets(selectedIds, n)}
+              mutedClassName="text-muted-foreground/40"
+            />
+          </div>
+          {/* Pick status */}
+          <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Pick (${displayKey(shortcuts.pick)})`} onClick={() => flagAssets(selectedIds, "pick")}>
+              <CheckCircle2 size={15} className="text-emerald-500" />
             </Button>
-          )}
-          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Deselect all (Esc)" onClick={() => setSelectedIds([])}>
-            Deselect all
-          </Button>
-          <StarRow value={null} size={16} onRate={(n) => rateAssets(selectedIds, n)} />
-          <Button size="sm" variant="ghost" title="Clear rating" onClick={() => rateAssets(selectedIds, null)}>
-            <StarOff size={15} />
-          </Button>
-          <Button size="sm" variant="ghost" title={`Pick (${displayKey(shortcuts.pick)})`} onClick={() => flagAssets(selectedIds, "pick")}>
-            <CheckCircle2 size={15} className="text-emerald-500" />
-          </Button>
-          <Button size="sm" variant="ghost" title={`Reject (${displayKey(shortcuts.reject)})`} onClick={() => flagAssets(selectedIds, "reject")}>
-            <XCircle size={15} className="text-red-500" />
-          </Button>
-          <Button size="sm" variant="ghost" title={`Unflag (${displayKey(shortcuts.unflag)})`} onClick={() => flagAssets(selectedIds, null)}>
-            <Circle size={15} className="text-muted-foreground" />
-          </Button>
-          <Button size="sm" variant="ghost" title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`} onClick={() => reviewAssets(selectedIds, true)}>
-            <Glasses size={15} className="text-sky-500" />
-          </Button>
-          <Button size="sm" variant="ghost" title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
-            <GlassesOff size={15} className="text-muted-foreground" />
-          </Button>
-          <Button size="sm" variant="ghost" title={`Favorite (${displayKey(shortcuts.favorite)})`} onClick={() => favoriteAssets(selectedIds, true)}>
-            <Heart size={15} className="fill-pink-500 text-pink-500" />
-          </Button>
-          <Button size="sm" variant="ghost" title="Unfavorite" onClick={() => favoriteAssets(selectedIds, false)}>
-            <Heart size={15} className="text-muted-foreground" />
-          </Button>
-          <Button size="sm" variant="ghost" title="Archive (hide from timeline, reversible)" disabled={busy} onClick={() => archiveAssets(selectedIds)}>
-            <Archive size={15} />
-          </Button>
-          <AlertDialog
-            asChild
-            disabled={busy}
-            title={`Move ${selectedIds.length} photo${selectedIds.length === 1 ? "" : "s"} to trash?`}
-            description="They go to Immich's trash (recoverable there until it's emptied), not permanent deletion."
-            onConfirm={() => trashAssets(selectedIds)}
-          >
-            <Button size="sm" variant="ghost" title="Move to trash" disabled={busy}>
-              <Trash2 size={15} className="text-red-500" />
+            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Reject (${displayKey(shortcuts.reject)})`} onClick={() => flagAssets(selectedIds, "reject")}>
+              <XCircle size={15} className="text-red-500" />
             </Button>
-          </AlertDialog>
+            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Unflag (${displayKey(shortcuts.unflag)})`} onClick={() => flagAssets(selectedIds, null)}>
+              <Circle size={15} className="text-muted-foreground" />
+            </Button>
+          </div>
+          {/* Review status */}
+          <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`} onClick={() => reviewAssets(selectedIds, true)}>
+              <Glasses size={15} className="text-sky-500" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2" title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
+              <GlassesOff size={15} className="text-muted-foreground" />
+            </Button>
+          </div>
+          {/* Favorite */}
+          <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Favorite (${displayKey(shortcuts.favorite)})`} onClick={() => favoriteAssets(selectedIds, true)}>
+              <Heart size={15} className="fill-pink-500 text-pink-500" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2" title="Unfavorite" onClick={() => favoriteAssets(selectedIds, false)}>
+              <Heart size={15} className="text-muted-foreground" />
+            </Button>
+          </div>
+          {/* Archive / trash */}
+          <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <Button size="sm" variant="ghost" className="h-7 px-2" title="Archive (hide from timeline, reversible)" disabled={busy} onClick={() => archiveAssets(selectedIds)}>
+              <Archive size={15} />
+            </Button>
+            <AlertDialog
+              asChild
+              disabled={busy}
+              title={`Move ${selectedIds.length} photo${selectedIds.length === 1 ? "" : "s"} to trash?`}
+              description="They go to Immich's trash (recoverable there until it's emptied), not permanent deletion."
+              onConfirm={() => trashAssets(selectedIds)}
+            >
+              <Button size="sm" variant="ghost" className="h-7 px-2" title="Move to trash" disabled={busy}>
+                <Trash2 size={15} className="text-red-500" />
+              </Button>
+            </AlertDialog>
+          </div>
           <Button size="sm" variant="ghost" title="Clear selection (Esc)" onClick={() => setSelectedIds([])}>
             <X size={15} />
           </Button>
