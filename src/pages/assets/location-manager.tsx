@@ -603,7 +603,7 @@ export default function LocationManager() {
       <Header
         leftComponent={
           <div className="flex items-baseline gap-2">
-            <span>Location Manager</span>
+            <span>GPS Manager</span>
             {total != null && (
               <span className="text-xs font-normal text-muted-foreground whitespace-nowrap">
                 {total.toLocaleString()}{" "}

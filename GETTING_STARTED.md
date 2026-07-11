@@ -13,7 +13,7 @@ with some extra work baked in:
   actually change your library; everything else is reversible tagging.
 - **Tag Manager** — browse, rename, nest, and clean up your Immich tags in
   one tree view instead of hunting through individual photos.
-- **Location Manager** — a photo grid and a map side by side for fixing GPS
+- **GPS Manager** — a photo grid and a map side by side for fixing GPS
   data: filter by album/GPS status/date, select photos to see their pins,
   click the map (or search) to pick a spot, and copy/paste locations between
   photos. Save places you use often (like home) as reorderable Favourites

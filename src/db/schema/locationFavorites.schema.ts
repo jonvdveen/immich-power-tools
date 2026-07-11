@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { randomUUID } from "crypto";
 
-// Per-user saved locations for the Location Manager ("Home", "Cottage", …).
+// Per-user saved locations for the GPS Manager ("Home", "Cottage", …).
 // Stored server-side so they follow the user across browsers/devices.
 export const locationFavorites = sqliteTable("location_favorites", {
   id: text("id").primaryKey().$defaultFn(() => randomUUID()),

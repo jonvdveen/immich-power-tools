@@ -152,7 +152,7 @@ context in project memory (`immich-power-tools-cull.md`,
     printed "build exit: 0" even on the failed build; use `docker build
     ... > file.log 2>&1; echo $?` (no pipe) to get the real status.
 
-## Location Manager (`/assets/location-manager`)
+## GPS Manager (`/assets/location-manager`; renamed from "Location Manager" 2026-07-11 — URL/file path kept, same precedent as the Rate & Cull rename)
 
 - **LOC-3**: Back/Forward (jump to next/previous missing-GPS photo) only
   searches currently-loaded photos (500/page) — can't reach missing-GPS
