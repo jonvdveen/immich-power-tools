@@ -105,6 +105,28 @@ context in project memory (`immich-power-tools-cull.md`,
 
 ## Location Manager (`/assets/location-manager`)
 
+- Post-v0.30.0 layout pass (2026-07-10, unreleased): sidebar split into two
+  visually distinct sections — top (bg-muted/30, border-b-2): search box,
+  a Copy/Paste row (**Copy Image GPS**, **Copy Map GPS**, **Paste
+  Location** — renamed from "Copy Image Location" and the Map Coordinates
+  field's old "Copy" button, both relocated here), and a Favourites row
+  (**Apply favourite ▾**, **Add favourite**, **Manage favourites** — all
+  three now live here, not split between sidebar and bottom bar); bottom
+  (map + Image Coordinates field w/ **Update** button + Map Coordinates
+  field, Copy button removed since it moved up). All three copy/paste
+  buttons and both favourite-apply buttons tint green (blue for Paste)
+  via `!bg-*` important-classes when eligible, on top of the normal
+  disabled/greyed look — pattern: `activeButtonClass(active, "green" |
+  "blue")` local to location-manager.tsx. "Save" renamed to **Update**
+  and gated behind a confirm `AlertDialog` (ref-imperative, opens only
+  after coordinate parsing succeeds — TagRow/FavoritesSheet precedent).
+  Clear-filters "X" is now always rendered (was conditional, caused
+  layout jump) — `disabled` instead of hidden. The old floating
+  bottom bar (FloatingBar, covered the grid) is gone; replaced by a
+  plain top-docked bar inside the grid column (only Selected-count +
+  Select all/Deselect all remain — Copy/Paste/Favourites moved to the
+  sidebar per above, so the redundant "Favourites" quick-menu there was
+  deleted).
 - Released as **v0.30.0** (2026-07-10) — version jumped from 0.24.x to mark
   the new module. Final pre-release fixes: AlbumDropdown gained an "All
   albums" clear option (shared component, also improves Geo Heatmap);

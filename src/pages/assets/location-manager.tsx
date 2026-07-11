@@ -1,11 +1,11 @@
 import AssetGrid, { AssetPhoto } from "@/components/shared/AssetGrid";
 import AlbumDropdown from "@/components/shared/AlbumDropdown";
-import FloatingBar from "@/components/shared/FloatingBar";
 import Header from "@/components/shared/Header";
 import PageLayout from "@/components/layouts/PageLayout";
 import FavoritesSheet from "@/components/location-manager/FavoritesSheet";
 import LocationSearchBox from "@/components/location-manager/LocationSearchBox";
 import { useLocationFavorites } from "@/components/location-manager/useLocationFavorites";
+import { AlertDialog, IAlertDialogActions } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -47,7 +47,6 @@ import {
   Calendar as CalendarIcon,
   Check,
   ChevronDown,
-  ChevronUp,
   ClipboardCopy,
   ClipboardPaste,
   Expand,
@@ -81,6 +80,16 @@ interface IClipboard {
   coords: ILatLng;
   source: "image" | "map";
 }
+
+// Outline buttons default to a neutral look; when the action is actually
+// available we tint the background so eligibility reads at a glance instead
+// of only via the (subtler) disabled/greyed-out state.
+const activeButtonClass = (active: boolean, color: "green" | "blue") => {
+  if (!active) return "";
+  return color === "green"
+    ? "!bg-green-600 !text-white !border-green-600 hover:!bg-green-700"
+    : "!bg-blue-600 !text-white !border-blue-600 hover:!bg-blue-700";
+};
 
 export default function LocationManager() {
   const router = useRouter();
@@ -126,6 +135,10 @@ export default function LocationManager() {
   const [imageCoordsError, setImageCoordsError] = useState(false);
   const [mapCoordsDraft, setMapCoordsDraft] = useState("");
   const [mapCoordsError, setMapCoordsError] = useState(false);
+
+  // Confirmation before writing Image Coordinates to selected photos.
+  const updateConfirmRef = useRef<IAlertDialogActions>(null);
+  const [pendingUpdateCoords, setPendingUpdateCoords] = useState<ILatLng | null>(null);
 
   // Quick "Add favourite" popover (right panel; saves the selected pin)
   const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -408,7 +421,7 @@ export default function LocationManager() {
   const copyMapLocation = () => {
     if (!selectedPinCoords) return;
     setClipboard({ coords: selectedPinCoords, source: "map" });
-    // Unified state: stage it in the Image Coordinates box too, so "Save"
+    // Unified state: stage it in the Image Coordinates box too, so "Update"
     // becomes an alternative to the Paste button.
     if (selectedIds.length > 0) {
       setImageCoordsDraft(formatCoordinates(selectedPinCoords));
@@ -425,14 +438,19 @@ export default function LocationManager() {
     applyCoordinates(selectedIds, clipboard.coords);
   };
 
-  const saveImageCoordinates = () => {
+  const handleUpdateClick = () => {
     const parsed = parseCoordinates(imageCoordsDraft);
     if (!parsed) {
       setImageCoordsError(true);
       return;
     }
     setImageCoordsError(false);
-    applyCoordinates(selectedIds, parsed);
+    setPendingUpdateCoords(parsed);
+    updateConfirmRef.current?.open();
+  };
+
+  const confirmUpdate = () => {
+    if (pendingUpdateCoords) applyCoordinates(selectedIds, pendingUpdateCoords);
   };
 
   const commitMapCoordinates = () => {
@@ -544,6 +562,8 @@ export default function LocationManager() {
     : "Paste Location";
 
   const hasDateFilter = !!(dateFrom || dateTo);
+  const hasAnyFilter = !!(albumId || gpsStatus !== "all" || hasDateFilter);
+  const canApplyFavorite = favorites.length > 0 && selectedIds.length > 0;
 
   return (
     <PageLayout className="!p-0 !mb-0 relative">
@@ -649,23 +669,22 @@ export default function LocationManager() {
             >
               {sortOrder === "asc" ? <SortAsc size={16} /> : <SortDesc size={16} />}
             </Button>
-            {(albumId || gpsStatus !== "all" || hasDateFilter) && (
-              <Button
-                variant="outline"
-                size="sm"
-                title="Clear filters"
-                onClick={() =>
-                  setFilters({
-                    albumId: undefined,
-                    gpsStatus: undefined,
-                    dateFrom: undefined,
-                    dateTo: undefined,
-                  })
-                }
-              >
-                <X size={16} />
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              title="Clear filters"
+              disabled={!hasAnyFilter}
+              onClick={() =>
+                setFilters({
+                  albumId: undefined,
+                  gpsStatus: undefined,
+                  dateFrom: undefined,
+                  dateTo: undefined,
+                })
+              }
+            >
+              <X size={16} />
+            </Button>
           </div>
         }
       />
@@ -674,95 +693,257 @@ export default function LocationManager() {
           className="flex flex-col lg:flex-row"
           style={{ height: "calc(100vh - 60px)" }}
         >
-          <div className="flex-1 min-w-0 overflow-y-auto pb-28">
-            {loading ? (
-              <div className="flex flex-col gap-2 h-full justify-center items-center w-full">
-                <Hourglass />
-                <p className="text-lg">Loading...</p>
-              </div>
-            ) : assets.length === 0 ? (
-              <div className="flex flex-col gap-2 h-full justify-center items-center w-full">
-                <p className="text-lg">No photos match these filters</p>
-                <p className="text-sm text-muted-foreground">
-                  Try a different album, GPS status, or date range.
+          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+            {selectedIds.length > 0 && (
+              <div className="shrink-0 border-b bg-background px-3 py-2 flex items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground whitespace-nowrap">
+                  {selectedIds.length} Selected
                 </p>
-              </div>
-            ) : (
-              <>
-                <AssetGrid
-                  assets={assets}
-                  selectable
-                  clickToSelect
-                  renderExtras={renderThumbnailExtras}
-                  onPhotoHover={setHoveredAssetId}
-                  highlightedAssetId={flashedAssetId}
-                />
-                <div className="flex flex-col items-center gap-2 py-4">
-                  <p className="text-xs text-muted-foreground">
-                    Showing {assets.length}
-                    {total != null ? ` of ${total.toLocaleString()}` : ""} item
-                    {(total ?? assets.length) === 1 ? "" : "s"}
-                  </p>
-                  {hasMore && (
-                    <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
-                      {loadingMore ? "Loading..." : "Load more"}
+                <div className="flex items-center gap-2">
+                  {selectedIds.length < assets.length && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        updateContext({ selectedIds: assets.map((a) => a.id) })
+                      }
+                    >
+                      Select all
                     </Button>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => updateContext({ selectedIds: [] })}
+                  >
+                    Deselect all
+                  </Button>
                 </div>
-              </>
+              </div>
             )}
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="flex flex-col gap-2 h-full justify-center items-center w-full">
+                  <Hourglass />
+                  <p className="text-lg">Loading...</p>
+                </div>
+              ) : assets.length === 0 ? (
+                <div className="flex flex-col gap-2 h-full justify-center items-center w-full">
+                  <p className="text-lg">No photos match these filters</p>
+                  <p className="text-sm text-muted-foreground">
+                    Try a different album, GPS status, or date range.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <AssetGrid
+                    assets={assets}
+                    selectable
+                    clickToSelect
+                    renderExtras={renderThumbnailExtras}
+                    onPhotoHover={setHoveredAssetId}
+                    highlightedAssetId={flashedAssetId}
+                  />
+                  <div className="flex flex-col items-center gap-2 py-4">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {assets.length}
+                      {total != null ? ` of ${total.toLocaleString()}` : ""} item
+                      {(total ?? assets.length) === 1 ? "" : "s"}
+                    </p>
+                    {hasMore && (
+                      <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
+                        {loadingMore ? "Loading..." : "Load more"}
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="w-full lg:w-[440px] xl:w-[500px] shrink-0 border-t lg:border-t-0 lg:border-l flex flex-col h-[50vh] lg:h-auto">
-            <div className="p-3 flex flex-col gap-3 border-b">
+            {/* Top section: search + copy/paste + favourites */}
+            <div className="flex flex-col gap-3 p-3 bg-muted/30 border-b-2 border-border">
               <LocationSearchBox onSelect={handleSearchSelect} />
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">
-                  Image Coordinates
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={imageCoordsDraft}
-                    disabled={selectedIds.length === 0}
-                    placeholder={
-                      selectedIds.length === 0
-                        ? "Select images first"
-                        : "Mixed or no coordinates — paste or type lat, long"
-                    }
-                    className={imageCoordsError ? "border-destructive" : ""}
-                    onChange={(e) => {
-                      setImageCoordsDraft(e.target.value);
-                      setImageCoordsError(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveImageCoordinates();
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    className="shrink-0"
-                    title="Save Image Coordinates"
-                    disabled={
-                      !imageCoordsDraft.trim() ||
-                      selectedIds.length === 0 ||
-                      saving
-                    }
-                    onClick={saveImageCoordinates}
-                  >
-                    {saving ? "Saving..." : "Save"}
-                  </Button>
-                </div>
-                {imageCoordsError && (
-                  <p className="text-xs text-destructive">
-                    Couldn&apos;t read those coordinates — try &quot;latitude, longitude&quot;.
-                  </p>
-                )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canCopyImageLocation}
+                  title="Copy this image's coordinates"
+                  className={activeButtonClass(canCopyImageLocation, "green")}
+                  onClick={copyImageLocation}
+                >
+                  <ClipboardCopy size={14} className="mr-1" /> Copy Image GPS
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!selectedPinCoords}
+                  title="Copy the selected pin's coordinates"
+                  className={activeButtonClass(!!selectedPinCoords, "green")}
+                  onClick={copyMapLocation}
+                >
+                  <ClipboardCopy size={14} className="mr-1" /> Copy Map GPS
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!clipboard || selectedIds.length === 0 || saving}
+                  title="Apply the copied coordinates to all selected images"
+                  className={activeButtonClass(!!clipboard, "blue")}
+                  onClick={pasteLocation}
+                >
+                  <ClipboardPaste size={14} className="mr-1" /> {pasteLabel}
+                </Button>
               </div>
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">
-                  Map Coordinates
-                </Label>
-                <div className="flex gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!canApplyFavorite || saving}
+                      title={
+                        favorites.length === 0
+                          ? "No favourites saved yet"
+                          : selectedIds.length === 0
+                            ? "Select photos first"
+                            : "Apply a favourite location to the selected photos"
+                      }
+                      className={activeButtonClass(canApplyFavorite, "green")}
+                    >
+                      <Star size={14} className="mr-1" /> Apply favourite
+                      <ChevronDown size={14} className="ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {favorites.map((favorite) => (
+                      <DropdownMenuItem
+                        key={favorite.id}
+                        onSelect={() => handleApplyFavorite(favorite)}
+                      >
+                        {favorite.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Popover open={quickAddOpen} onOpenChange={setQuickAddOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!selectedPinCoords}
+                      title={
+                        selectedPinCoords
+                          ? "Save the selected pin as a favourite"
+                          : "Drop or select a pin on the map first"
+                      }
+                      className={activeButtonClass(!!selectedPinCoords, "green")}
+                    >
+                      <Plus size={14} className="mr-1" /> Add favourite
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-72 flex flex-col gap-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Name this location
+                      {selectedPinCoords
+                        ? ` (${formatCoordinates(selectedPinCoords)})`
+                        : ""}
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        autoFocus
+                        value={quickAddName}
+                        placeholder="e.g. Home"
+                        className="h-8 text-sm"
+                        onChange={(e) => setQuickAddName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleQuickAdd();
+                          if (e.key === "Escape") setQuickAddOpen(false);
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-8 shrink-0"
+                        disabled={!quickAddName.trim() || favoritesState.busy}
+                        onClick={handleQuickAdd}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <FavoritesSheet
+                  favorites={favoritesState.favorites}
+                  loading={favoritesState.loading}
+                  busy={favoritesState.busy}
+                  selectedCount={selectedIds.length}
+                  applying={saving}
+                  onRename={favoritesState.rename}
+                  onDelete={favoritesState.remove}
+                  onReorder={favoritesState.reorder}
+                  onApply={handleApplyFavorite}
+                  onShowOnMap={handleShowFavoriteOnMap}
+                />
+              </div>
+            </div>
+
+            {/* Bottom section: coordinate fields + map */}
+            <div className="flex flex-col flex-1 min-h-0">
+              <div className="p-3 flex flex-col gap-3 border-b">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs text-muted-foreground">
+                    Image Coordinates
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={imageCoordsDraft}
+                      disabled={selectedIds.length === 0}
+                      placeholder={
+                        selectedIds.length === 0
+                          ? "Select images first"
+                          : "Mixed or no coordinates — paste or type lat, long"
+                      }
+                      className={imageCoordsError ? "border-destructive" : ""}
+                      onChange={(e) => {
+                        setImageCoordsDraft(e.target.value);
+                        setImageCoordsError(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleUpdateClick();
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="shrink-0"
+                      title="Update Image Coordinates"
+                      disabled={
+                        !imageCoordsDraft.trim() ||
+                        selectedIds.length === 0 ||
+                        saving
+                      }
+                      onClick={handleUpdateClick}
+                    >
+                      {saving ? "Updating..." : "Update"}
+                    </Button>
+                  </div>
+                  {imageCoordsError && (
+                    <p className="text-xs text-destructive">
+                      Couldn&apos;t read those coordinates — try &quot;latitude, longitude&quot;.
+                    </p>
+                  )}
+                  <AlertDialog
+                    ref={updateConfirmRef}
+                    title="Update location?"
+                    description={`Set the location of ${selectedIds.length} selected photo${selectedIds.length === 1 ? "" : "s"} to ${pendingUpdateCoords ? formatCoordinates(pendingUpdateCoords) : imageCoordsDraft}. This can't be undone automatically for photos that had no location before.`}
+                    onConfirm={confirmUpdate}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs text-muted-foreground">
+                    Map Coordinates
+                  </Label>
                   <Input
                     value={mapCoordsDraft}
                     placeholder="Click the map, search, or type lat, long"
@@ -778,204 +959,34 @@ export default function LocationManager() {
                       if (mapCoordsDraft !== selectedPinKey) commitMapCoordinates();
                     }}
                   />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0"
-                    title="Copy Map Location"
-                    disabled={!selectedPinCoords}
-                    onClick={copyMapLocation}
-                  >
-                    <ClipboardCopy size={14} className="mr-1" /> Copy
-                  </Button>
+                  {mapCoordsError && (
+                    <p className="text-xs text-destructive">
+                      Couldn&apos;t read those coordinates — try &quot;latitude, longitude&quot;.
+                    </p>
+                  )}
                 </div>
-                {mapCoordsError && (
-                  <p className="text-xs text-destructive">
-                    Couldn&apos;t read those coordinates — try &quot;latitude, longitude&quot;.
-                  </p>
-                )}
               </div>
-            </div>
-            <div className="px-3 py-2 border-b flex items-center gap-2 flex-wrap">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={favorites.length === 0 || selectedIds.length === 0 || saving}
-                    title={
-                      favorites.length === 0
-                        ? "No favourites saved yet"
-                        : selectedIds.length === 0
-                          ? "Select photos first"
-                          : "Apply a favourite location to the selected photos"
-                    }
-                  >
-                    <Star size={14} className="mr-1" /> Apply favourite
-                    <ChevronDown size={14} className="ml-1" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {favorites.map((favorite) => (
-                    <DropdownMenuItem
-                      key={favorite.id}
-                      onSelect={() => handleApplyFavorite(favorite)}
-                    >
-                      {favorite.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Popover open={quickAddOpen} onOpenChange={setQuickAddOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!selectedPinCoords}
-                    title={
-                      selectedPinCoords
-                        ? "Save the selected pin as a favourite"
-                        : "Drop or select a pin on the map first"
-                    }
-                  >
-                    <Plus size={14} className="mr-1" /> Add favourite
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-72 flex flex-col gap-2">
-                  <Label className="text-xs text-muted-foreground">
-                    Name this location
-                    {selectedPinCoords
-                      ? ` (${formatCoordinates(selectedPinCoords)})`
-                      : ""}
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      autoFocus
-                      value={quickAddName}
-                      placeholder="e.g. Home"
-                      className="h-8 text-sm"
-                      onChange={(e) => setQuickAddName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleQuickAdd();
-                        if (e.key === "Escape") setQuickAddOpen(false);
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      className="h-8 shrink-0"
-                      disabled={!quickAddName.trim() || favoritesState.busy}
-                      onClick={handleQuickAdd}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <FavoritesSheet
-                favorites={favoritesState.favorites}
-                loading={favoritesState.loading}
-                busy={favoritesState.busy}
-                selectedCount={selectedIds.length}
-                applying={saving}
-                onRename={favoritesState.rename}
-                onDelete={favoritesState.remove}
-                onReorder={favoritesState.reorder}
-                onApply={handleApplyFavorite}
-                onShowOnMap={handleShowFavoriteOnMap}
-              />
-            </div>
-            <div className="flex-1 min-h-0">
-              <LocationManagerMap
-                imagePins={imagePins}
-                allPins={allPins}
-                droppedPin={droppedPin}
-                selectedPin={selectedPin}
-                highlightedAssetId={hoveredAssetId}
-                isDarkMode={theme === "dark"}
-                onMapClick={handleMapClick}
-                onImagePinClick={(id) => {
-                  setSelectedPin({ type: "image", id });
-                  flashPhoto(id);
-                }}
-                onAllPinClick={flashPhoto}
-                onDroppedPinClick={() => setSelectedPin({ type: "dropped" })}
-                flyTo={flyTo}
-              />
+              <div className="flex-1 min-h-0">
+                <LocationManagerMap
+                  imagePins={imagePins}
+                  allPins={allPins}
+                  droppedPin={droppedPin}
+                  selectedPin={selectedPin}
+                  highlightedAssetId={hoveredAssetId}
+                  isDarkMode={theme === "dark"}
+                  onMapClick={handleMapClick}
+                  onImagePinClick={(id) => {
+                    setSelectedPin({ type: "image", id });
+                    flashPhoto(id);
+                  }}
+                  onAllPinClick={flashPhoto}
+                  onDroppedPinClick={() => setSelectedPin({ type: "dropped" })}
+                  flyTo={flyTo}
+                />
+              </div>
             </div>
           </div>
         </div>
-
-        {selectedIds.length > 0 && (
-          <FloatingBar className="lg:right-[440px] xl:right-[500px] lg:max-w-xl">
-            <div className="flex items-center gap-2 justify-between w-full">
-              <p className="text-sm text-muted-foreground whitespace-nowrap">
-                {selectedIds.length} Selected
-              </p>
-              <div className="flex items-center gap-2">
-                {selectedIds.length < assets.length && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      updateContext({ selectedIds: assets.map((a) => a.id) })
-                    }
-                  >
-                    Select all
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => updateContext({ selectedIds: [] })}
-                >
-                  Deselect all
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!canCopyImageLocation}
-                  title="Copy this image's coordinates"
-                  onClick={copyImageLocation}
-                >
-                  <ClipboardCopy size={14} className="mr-1" /> Copy Image Location
-                </Button>
-                {favorites.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={saving}
-                        title="Apply a favourite location to the selected photos"
-                      >
-                        <Star size={14} className="mr-1" /> Favourites
-                        <ChevronUp size={14} className="ml-1" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" side="top">
-                      {favorites.map((favorite) => (
-                        <DropdownMenuItem
-                          key={favorite.id}
-                          onSelect={() => handleApplyFavorite(favorite)}
-                        >
-                          {favorite.name}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <Button
-                  size="sm"
-                  disabled={!clipboard || saving}
-                  title="Apply the copied coordinates to all selected images"
-                  onClick={pasteLocation}
-                >
-                  <ClipboardPaste size={14} className="mr-1" /> {pasteLabel}
-                </Button>
-              </div>
-            </div>
-          </FloatingBar>
-        )}
       </PhotoSelectionContext.Provider>
     </PageLayout>
   );
