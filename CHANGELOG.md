@@ -7,6 +7,46 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.30.0 — 2026-07-10
+
+The version jumps from 0.24 to 0.30 because this release adds a whole new
+section to the app.
+
+- **New: Location Manager** (sidebar → Tools → Location Manager) — a photo
+  grid and a world map side by side, built for fixing photos that don't
+  know where they were taken. It replaces the old "Missing Locations"
+  tool, which is now hidden from the menu (its page still works if you
+  had it bookmarked).
+  - **Find the photos:** filter by album, by GPS status (All / ✓ GPS /
+    ✗ GPS), and by date taken. The header shows how many photos match —
+    watch the "without location" number shrink as you work.
+  - **See them on the map:** select photos and their pins appear. Flip on
+    "All on map" to plot every loaded photo at once — great for spotting
+    the one shot tagged on the wrong continent. Hover a photo to light up
+    its pin; click a pin to jump to its photo.
+  - **Fix them:** click the map (or search for an address, or paste
+    coordinates from Google Maps — even the degrees-minutes-seconds kind)
+    to drop a pin, then save it to every selected photo. Or copy the
+    location from one photo and paste it onto others.
+  - **Favourites:** save places you tag constantly — home, the cottage,
+    grandma's — and apply them with one click from the Favourites menu.
+    Rename, delete, and drag them into whatever order you like ("Manage
+    favourites"); they're saved to your account, so they follow you
+    between devices.
+  - **Undo:** applied the wrong location? The confirmation message has an
+    Undo button that puts back each photo's previous coordinates. (Photos
+    that had *no* location before can't be reverted to blank — Immich's
+    API doesn't allow clearing GPS — so Undo only offers itself when it
+    can actually help.)
+  - Every thumbnail wears a green ✓ GPS or red ✗ GPS badge, clicking a
+    photo selects it, and the magnifier-style expand button opens a
+    full-size preview.
+- **Changed:** the album dropdown (here and in Geo Heatmap) now has an
+  "All albums" option, so you can get back to your whole timeline after
+  picking an album.
+- **Hidden:** "Missing Locations" no longer appears in the sidebar —
+  Location Manager does everything it did and more.
+
 ## v0.24.3 — 2026-07-07
 
 - **Renamed:** "Cull Photos" is now "Rate & Cull" — a plainer name for

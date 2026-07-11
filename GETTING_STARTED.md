@@ -13,6 +13,12 @@ with some extra work baked in:
   actually change your library; everything else is reversible tagging.
 - **Tag Manager** — browse, rename, nest, and clean up your Immich tags in
   one tree view instead of hunting through individual photos.
+- **Location Manager** — a photo grid and a map side by side for fixing GPS
+  data: filter by album/GPS status/date, select photos to see their pins,
+  click the map (or search) to pick a spot, and copy/paste locations between
+  photos. Save places you use often (like home) as reorderable Favourites
+  and apply them with one click. Replaces the old "Missing Locations" tool,
+  which is now hidden from the menu.
 - **Workflow fixes & extra conditions** — Immich v3 API-key permission fixes,
   paginated workflow triggers (no more 10k cap), plus Tag / Resolution /
   file-size / filename / face-count / time-of-day conditions and a Remove-Tag

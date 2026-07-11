@@ -3,8 +3,10 @@
 > [!IMPORTANT]
 > **This is jonvdveen's personal fork**, with extra features not in the
 > upstream project: **Face Review** (fix face-recognition mistakes in bulk),
-> **Rate & Cull** (Lightroom-style photo review/rating/culling), and **Tag
-> Manager** (browse/rename/nest your Immich tags), plus several bug fixes.
+> **Rate & Cull** (Lightroom-style photo review/rating/culling), **Tag
+> Manager** (browse/rename/nest your Immich tags), and **Location Manager**
+> (map-based GPS tagging with favourite locations — replaces Missing
+> Locations), plus several bug fixes.
 > If you got a link to this repo from a friend, **use this fork's image**
 > (`ghcr.io/jonvdveen/immich-power-tools:latest`), not the upstream one —
 > see [GETTING_STARTED.md](./GETTING_STARTED.md) for the short version.

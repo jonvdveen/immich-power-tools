@@ -105,6 +105,17 @@ context in project memory (`immich-power-tools-cull.md`,
 
 ## Location Manager (`/assets/location-manager`)
 
+- Released as **v0.30.0** (2026-07-10) — version jumped from 0.24.x to mark
+  the new module. Final pre-release fixes: AlbumDropdown gained an "All
+  albums" clear option (shared component, also improves Geo Heatmap);
+  "Show all on map" moved into the header ("All on map"); Manage-favourites
+  sheet no longer duplicates Add; **Missing Locations hidden from the
+  sidebar** (page kept at /assets/missing-locations for bookmarks + clean
+  upstream merges — sidebarNavs.tsx has the commented-out entry). Release
+  notes are text-only by user choice (screenshots of the household library
+  would have put family photos in a public release; captured shots were
+  deleted).
+
 New module built 2026-07-10, intended to eventually replace Missing
 Locations (which stays untouched until then). MVP = Media Viewer (filtered
 grid: album + GPS status) + Map (image pins for selected photos, one
