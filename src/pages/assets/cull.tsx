@@ -372,7 +372,16 @@ export default function CullPhotosPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey || shortcutsOpen) return;
+      if (isTypingTarget(e.target) || shortcutsOpen) return;
+
+      // Cmd/Ctrl+A selects every loaded photo (grid only — the viewer has
+      // nothing to multi-select). Checked before the modifier early-return.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a" && viewerIndex === null) {
+        e.preventDefault();
+        if (assets.length) setSelectedIds(assets.map((a) => a.id));
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       // Keys act on the viewer photo when it's open, else on the grid selection.
       const targetIds = viewerAsset ? [viewerAsset.id] : selectedIds;
@@ -707,6 +716,14 @@ export default function CullPhotosPage() {
       {selectionActive && viewerIndex === null && (
         <FloatingBar className="!max-w-4xl flex-wrap gap-2">
           <span className="px-2 text-sm font-semibold whitespace-nowrap">{selectedIds.length} selected</span>
+          {selectedIds.length < assets.length && (
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Select every loaded photo (Cmd/Ctrl+A)" onClick={() => setSelectedIds(assets.map((a) => a.id))}>
+              Select all
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Deselect all (Esc)" onClick={() => setSelectedIds([])}>
+            Deselect all
+          </Button>
           <StarRow value={null} size={16} onRate={(n) => rateAssets(selectedIds, n)} />
           <Button size="sm" variant="ghost" title="Clear rating" onClick={() => rateAssets(selectedIds, null)}>
             <StarOff size={15} />

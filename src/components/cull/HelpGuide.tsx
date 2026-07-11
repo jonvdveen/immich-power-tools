@@ -11,6 +11,7 @@ const FIXED_SHORTCUTS: [string, string][] = [
   ["1 – 5", "Set star rating (press the same number again to clear it)"],
   ["0", "Clear star rating"],
   ["← / →", "Previous / next photo (viewer)"],
+  ["Cmd/Ctrl+A", "Select every loaded photo (grid)"],
   ["Esc", "Close viewer, or clear grid selection"],
 ];
 
