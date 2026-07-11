@@ -565,6 +565,19 @@ export default function LocationManager() {
         }
         rightComponent={
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 mr-1">
+              <Switch
+                id="show-all-on-map"
+                checked={showAllOnMap}
+                onCheckedChange={setShowAllOnMap}
+              />
+              <Label
+                htmlFor="show-all-on-map"
+                className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap"
+              >
+                All on map
+              </Label>
+            </div>
             <AlbumDropdown
               albumIds={albumId ? [albumId] : []}
               onChange={(albumIds) => setFilters({ albumId: albumIds?.[0] })}
@@ -862,29 +875,14 @@ export default function LocationManager() {
                 favorites={favoritesState.favorites}
                 loading={favoritesState.loading}
                 busy={favoritesState.busy}
-                pinCoords={selectedPinCoords}
                 selectedCount={selectedIds.length}
                 applying={saving}
-                onAdd={favoritesState.add}
                 onRename={favoritesState.rename}
                 onDelete={favoritesState.remove}
                 onReorder={favoritesState.reorder}
                 onApply={handleApplyFavorite}
                 onShowOnMap={handleShowFavoriteOnMap}
               />
-              <div className="flex items-center gap-2 shrink-0 ml-auto">
-                <Switch
-                  id="show-all-on-map"
-                  checked={showAllOnMap}
-                  onCheckedChange={setShowAllOnMap}
-                />
-                <Label
-                  htmlFor="show-all-on-map"
-                  className="text-xs text-muted-foreground cursor-pointer"
-                >
-                  Show all on map
-                </Label>
-              </div>
             </div>
             <div className="flex-1 min-h-0">
               <LocationManagerMap

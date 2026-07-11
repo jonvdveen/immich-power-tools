@@ -17,17 +17,15 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ILocationFavorite } from "@/handlers/api/locationFavorite.handler";
-import { formatCoordinates, ILatLng } from "@/lib/location-manager/coordinates";
+import { formatCoordinates } from "@/lib/location-manager/coordinates";
 import {
   ArrowDown,
   ArrowUp,
   Check,
   GripVertical,
   Loader2,
-  MapPin,
   MoreVertical,
   Pencil,
-  Plus,
   Settings2,
   Star,
   Trash2,
@@ -39,11 +37,8 @@ interface FavoritesSheetProps {
   favorites: ILocationFavorite[];
   loading: boolean;
   busy: boolean;
-  /** Coordinates of the currently selected pin — the source for "Add". */
-  pinCoords: ILatLng | null;
   selectedCount: number;
   applying: boolean;
-  onAdd: (name: string, coords: ILatLng) => Promise<boolean>;
   onRename: (id: string, name: string) => Promise<boolean>;
   onDelete: (favorite: ILocationFavorite) => void;
   onReorder: (orderedIds: string[]) => void;
@@ -176,10 +171,8 @@ export default function FavoritesSheet({
   favorites,
   loading,
   busy,
-  pinCoords,
   selectedCount,
   applying,
-  onAdd,
   onRename,
   onDelete,
   onReorder,
@@ -187,18 +180,10 @@ export default function FavoritesSheet({
   onShowOnMap,
 }: FavoritesSheetProps) {
   const [open, setOpen] = useState(false);
-  // null = not adding; otherwise the name being typed for the new favourite
-  const [addDraft, setAddDraft] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-
-  const handleAdd = async () => {
-    const name = addDraft?.trim();
-    if (!name || !pinCoords) return;
-    if (await onAdd(name, pinCoords)) setAddDraft(null);
-  };
 
   const handleRename = async () => {
     const name = renameDraft.trim();
@@ -229,10 +214,7 @@ export default function FavoritesSheet({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) {
-          setAddDraft(null);
-          setRenamingId(null);
-        }
+        if (!next) setRenamingId(null);
       }}
     >
       <SheetTrigger asChild>
@@ -253,77 +235,18 @@ export default function FavoritesSheet({
           </SheetTitle>
           <SheetDescription>
             Saved spots you tag photos with often. Drag to reorder — the same
-            order shows in the Favourites menu at the bottom of the page.
+            order shows in every Favourites menu. To add one, use the
+            &quot;Add favourite&quot; button next to the map.
           </SheetDescription>
         </SheetHeader>
-
-        <div className="flex flex-col gap-1 pt-2">
-          {addDraft === null ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!pinCoords}
-              title={
-                pinCoords
-                  ? "Save the selected pin as a favourite"
-                  : "Drop or select a pin on the map first"
-              }
-              onClick={() => setAddDraft("")}
-            >
-              <Plus size={14} className="mr-1" /> Add favourite
-              {pinCoords && (
-                <span className="ml-2 text-xs text-muted-foreground truncate">
-                  {formatCoordinates(pinCoords)}
-                </span>
-              )}
-            </Button>
-          ) : (
-            pinCoords && (
-              <div className="flex items-center gap-1.5">
-                <Input
-                  autoFocus
-                  value={addDraft}
-                  placeholder="Name this location (e.g. Home)"
-                  className="h-8 text-sm"
-                  onChange={(e) => setAddDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleAdd();
-                    if (e.key === "Escape") setAddDraft(null);
-                  }}
-                />
-                <Button
-                  size="sm"
-                  className="h-8 px-2 shrink-0"
-                  disabled={!addDraft.trim() || busy}
-                  onClick={handleAdd}
-                >
-                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 px-2 shrink-0"
-                  onClick={() => setAddDraft(null)}
-                >
-                  <X size={14} />
-                </Button>
-              </div>
-            )
-          )}
-          {!pinCoords && addDraft === null && (
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <MapPin size={12} className="shrink-0" />
-              To add one: close this panel, put a pin where you want it, reopen.
-            </p>
-          )}
-        </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto mt-2">
           {loading ? (
             <p className="text-xs text-muted-foreground py-2">Loading…</p>
           ) : favorites.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2">
-              No favourites yet — find a spot on the map, then add it here.
+              No favourites yet — put a pin on the map, then use &quot;Add
+              favourite&quot; next to it.
             </p>
           ) : (
             favorites.map((favorite, index) =>
