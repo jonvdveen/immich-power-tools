@@ -68,6 +68,29 @@ const DATE_PRESETS: { label: string; range: () => [string, string] }[] = [
   },
 ];
 
+// lucide-react has no "GlassesOff" icon — built the same way lucide draws its
+// own Off icons (base shape + a diagonal slash, here reusing EyeOff's "m2 2 20 20").
+const GlassesOff = ({ size = 15, className = "" }: { size?: number; className?: string }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <circle cx="6" cy="15" r="4" />
+    <circle cx="18" cy="15" r="4" />
+    <path d="M14 15a2 2 0 0 0-2-2 2 2 0 0 0-2 2" />
+    <path d="M2.5 13 5 7c.7-1.3 1.4-2 3-2" />
+    <path d="M21.5 13 19 7c-.7-1.3-1.5-2-3-2" />
+    <path d="m2 2 20 20" />
+  </svg>
+);
+
 /**
  * Lightroom-style culling: pick a source (whole library / album / date
  * range), filter by rating/flag, rip through photos full-screen with
@@ -601,7 +624,7 @@ export default function CullPhotosPage() {
                 className={`rounded p-1.5 ${reviewStatusFilter.has("unreviewed") ? "bg-slate-600 text-white" : "text-muted-foreground hover:bg-accent"}`}
                 onClick={() => toggleReviewStatus("unreviewed")}
               >
-                <Glasses size={15} />
+                <GlassesOff size={15} />
               </button>
             </div>
 
@@ -701,7 +724,7 @@ export default function CullPhotosPage() {
             <Glasses size={15} className="text-sky-500" />
           </Button>
           <Button size="sm" variant="ghost" title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
-            <Glasses size={15} className="text-muted-foreground" />
+            <GlassesOff size={15} className="text-muted-foreground" />
           </Button>
           <Button size="sm" variant="ghost" title={`Favorite (${displayKey(shortcuts.favorite)})`} onClick={() => favoriteAssets(selectedIds, true)}>
             <Heart size={15} className="fill-pink-500 text-pink-500" />
