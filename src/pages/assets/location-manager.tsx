@@ -418,6 +418,9 @@ export default function LocationManager() {
     setSelectedPin({ type: "dropped" });
     setFlyTo({ coords, ts: Date.now() });
     toast({ title: "Image location copied", description: formatCoordinates(coords) });
+    // Copy is a one-shot action against the current selection — clear it so
+    // the next click starts a fresh pick rather than reusing this one.
+    updateContext({ selectedIds: [] });
   };
 
   const copyMapLocation = () => {
@@ -438,6 +441,9 @@ export default function LocationManager() {
   const pasteLocation = () => {
     if (!clipboard || selectedIds.length === 0) return;
     applyCoordinates(selectedIds, clipboard.coords);
+    // Paste is a one-shot action against the current selection — clear it so
+    // the next click starts a fresh pick rather than reusing this one.
+    updateContext({ selectedIds: [] });
   };
 
   const handleUpdateClick = () => {
@@ -746,74 +752,88 @@ export default function LocationManager() {
             </div>
             {selectedIds.length > 0 && (
               <div className="shrink-0 border-b bg-background px-3 py-2 flex flex-col gap-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm text-muted-foreground whitespace-nowrap">
-                    {selectedIds.length} Selected
-                  </p>
-                  {selectedIds.length < assets.length && (
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm text-muted-foreground whitespace-nowrap">
+                      {selectedIds.length} Selected
+                    </p>
+                    {selectedIds.length < assets.length && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          updateContext({ selectedIds: assets.map((a) => a.id) })
+                        }
+                      >
+                        Select all
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() =>
-                        updateContext({ selectedIds: assets.map((a) => a.id) })
-                      }
+                      onClick={() => updateContext({ selectedIds: [] })}
                     >
-                      Select all
+                      Deselect all
                     </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => updateContext({ selectedIds: [] })}
-                  >
-                    Deselect all
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!canCopyImageLocation}
-                    title="Copy this image's coordinates"
-                    className={activeButtonClass(canCopyImageLocation, "green")}
-                    onClick={copyImageLocation}
-                  >
-                    <ClipboardCopy size={14} className="mr-1" /> Copy Image GPS
-                  </Button>
-                  <Input
-                    value={imageCoordsDraft}
-                    disabled={selectedIds.length === 0}
-                    placeholder={
-                      selectedIds.length === 0
-                        ? "Select images first"
-                        : "lat, long"
-                    }
-                    className={`w-40 h-8 text-sm shrink-0 ${imageCoordsError ? "border-destructive" : ""}`}
-                    onChange={(e) => {
-                      setImageCoordsDraft(e.target.value);
-                      setImageCoordsError(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleUpdateClick();
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    className="shrink-0"
-                    title="Update Image Coordinates"
-                    disabled={
-                      !imageCoordsDraft.trim() ||
-                      selectedIds.length === 0 ||
-                      saving
-                    }
-                    onClick={handleUpdateClick}
-                  >
-                    {saving ? "Updating..." : "Update"}
-                  </Button>
-                  <AlertDialog
-                    ref={updateConfirmRef}
-                    title="Update location?"
-                    description={`Set the location of ${selectedIds.length} selected photo${selectedIds.length === 1 ? "" : "s"} to ${pendingUpdateCoords ? formatCoordinates(pendingUpdateCoords) : imageCoordsDraft}. This can't be undone automatically for photos that had no location before.`}
-                    onConfirm={confirmUpdate}
-                  />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!canCopyImageLocation}
+                      title="Copy this image's coordinates"
+                      className={activeButtonClass(canCopyImageLocation, "green")}
+                      onClick={copyImageLocation}
+                    >
+                      <ClipboardCopy size={14} className="mr-1" /> Copy Image GPS
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!clipboard || selectedIds.length === 0 || saving}
+                      title="Apply the copied coordinates to all selected images"
+                      className={activeButtonClass(!!clipboard, "blue")}
+                      onClick={pasteLocation}
+                    >
+                      <ClipboardPaste size={14} className="mr-1" /> {pasteLabel}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Input
+                      value={imageCoordsDraft}
+                      disabled={selectedIds.length === 0}
+                      placeholder={
+                        selectedIds.length === 0
+                          ? "Select images first"
+                          : "lat, long"
+                      }
+                      className={`w-40 h-8 text-sm shrink-0 ${imageCoordsError ? "border-destructive" : ""}`}
+                      onChange={(e) => {
+                        setImageCoordsDraft(e.target.value);
+                        setImageCoordsError(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleUpdateClick();
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="shrink-0"
+                      title="Update Image Coordinates"
+                      disabled={
+                        !imageCoordsDraft.trim() ||
+                        selectedIds.length === 0 ||
+                        saving
+                      }
+                      onClick={handleUpdateClick}
+                    >
+                      {saving ? "Updating..." : "Update"}
+                    </Button>
+                    <AlertDialog
+                      ref={updateConfirmRef}
+                      title="Update location?"
+                      description={`Set the location of ${selectedIds.length} selected photo${selectedIds.length === 1 ? "" : "s"} to ${pendingUpdateCoords ? formatCoordinates(pendingUpdateCoords) : imageCoordsDraft}. This can't be undone automatically for photos that had no location before.`}
+                      onConfirm={confirmUpdate}
+                    />
+                  </div>
                 </div>
                 {imageCoordsError && (
                   <p className="text-xs text-destructive">
@@ -954,16 +974,6 @@ export default function LocationManager() {
                   onApply={handleApplyFavorite}
                   onShowOnMap={handleShowFavoriteOnMap}
                 />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!clipboard || selectedIds.length === 0 || saving}
-                  title="Apply the copied coordinates to all selected images"
-                  className={activeButtonClass(!!clipboard, "blue")}
-                  onClick={pasteLocation}
-                >
-                  <ClipboardPaste size={14} className="mr-1" /> {pasteLabel}
-                </Button>
               </div>
             </div>
 

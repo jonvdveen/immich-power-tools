@@ -48,20 +48,19 @@ interface LocationManagerMapProps {
 }
 
 // Image pins are dots (one per selected photo); the dropped/candidate pin is
-// a classic teardrop so the two never read as the same thing. Whichever one
-// is actively selected is blue with an orange outline; everything else is
-// dark grey. The grid-hovered photo's pin additionally gets a cyan ring so
-// hover-linkage still reads even though it isn't "selection."
-const SELECTED_FILL = "#2563eb";
+// a classic teardrop so the two never read as the same thing. Both stay dark
+// grey regardless of selection — the actively selected one is distinguished
+// only by an orange border. The grid-hovered photo's pin additionally gets a
+// cyan ring so hover-linkage still reads even though it isn't "selection."
 const SELECTED_OUTLINE = "#f97316";
 const UNSELECTED_FILL = "#4b5563";
 
 const imagePinIcon = (selected: boolean, highlighted: boolean) =>
   L.divIcon({
     className: "",
-    html: `<div style="width:16px;height:16px;border-radius:9999px;background:${
-      selected ? SELECTED_FILL : UNSELECTED_FILL
-    };border:${selected ? `3px solid ${SELECTED_OUTLINE}` : "2px solid #fff"};box-shadow:0 1px 4px rgba(0,0,0,.55)${
+    html: `<div style="width:16px;height:16px;border-radius:9999px;background:${UNSELECTED_FILL};border:${
+      selected ? `3px solid ${SELECTED_OUTLINE}` : "2px solid #fff"
+    };box-shadow:0 1px 4px rgba(0,0,0,.55)${
       highlighted ? ";outline:3px solid #06b6d4;outline-offset:1px" : ""
     }"></div>`,
     iconSize: [16, 16],
@@ -72,9 +71,7 @@ const droppedPinIcon = (selected: boolean) =>
   L.divIcon({
     className: "",
     html: `<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));overflow:visible">
-      <path d="M15 1C7.3 1 1 7.3 1 15c0 10.5 14 26 14 26s14-15.5 14-26C29 7.3 22.7 1 15 1z" fill="${
-        selected ? SELECTED_FILL : UNSELECTED_FILL
-      }"${
+      <path d="M15 1C7.3 1 1 7.3 1 15c0 10.5 14 26 14 26s14-15.5 14-26C29 7.3 22.7 1 15 1z" fill="${UNSELECTED_FILL}"${
         selected ? ` stroke="${SELECTED_OUTLINE}" stroke-width="3"` : ' stroke="#fff" stroke-width="1.5"'
       }/>
       <circle cx="15" cy="15" r="5.5" fill="#fff"/>

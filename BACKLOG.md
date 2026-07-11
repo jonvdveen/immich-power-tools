@@ -105,6 +105,18 @@ context in project memory (`immich-power-tools-cull.md`,
 
 ## Location Manager (`/assets/location-manager`)
 
+- Second post-v0.30.1 pass (2026-07-11, unreleased): selected-pin color
+  simplified — both selected and unselected pins/dots stay dark grey now,
+  only an orange border marks the selected one (dropped the blue fill
+  from the previous pass). Copy Image GPS and Paste Image/Map GPS now
+  auto-deselect the grid selection right after acting — both are
+  one-shot actions against whatever was selected at click time, so
+  clearing lets the next click start a fresh pick instead of silently
+  reusing a stale one. Paste moved out of the sidebar favourites row into
+  the (still-selection-conditional) bar above the grid, immediately right
+  of Copy Image GPS; that bar is now `justify-between` — the left cluster
+  (count, Select all/Deselect all, Copy Image GPS, Paste) stays left,
+  Image Coordinates + Update pushed to the far right.
 - Post-v0.30.1 pass (2026-07-11, unreleased): **map tiles switched from
   OSM/CARTO to Esri** (`World_Street_Map` for light,
   `Canvas/World_Dark_Gray_Base`+`Reference` stacked for dark) — the
