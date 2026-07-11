@@ -435,19 +435,22 @@ export default function CullPhotosPage() {
   }, [viewerAsset, viewerIndex, selectedIds, assets.length, shortcuts, shortcutsOpen, rateAssets, flagAssets, reviewAssets, favoriteAssets]);
 
   // --- grid photos ---
-  const images: AssetPhoto[] = useMemo(
-    () =>
-      assets.map((a) => ({
-        id: a.id,
-        src: ASSET_THUMBNAIL_PATH(a.id),
-        width: a.exifImageWidth || 1500,
-        height: a.exifImageHeight || 1000,
-        isSelected: selectedIds.includes(a.id),
-        isVideo: a.type === "VIDEO",
-        duration: a.duration != null ? String(a.duration) : undefined,
-      })),
-    [assets, selectedIds]
-  );
+  const images: AssetPhoto[] = useMemo(() => {
+    const selectedSet = new Set(selectedIds);
+    return assets.map((a) => ({
+      id: a.id,
+      src: ASSET_THUMBNAIL_PATH(a.id),
+      width: a.exifImageWidth || 1500,
+      height: a.exifImageHeight || 1000,
+      isSelected: selectedSet.has(a.id),
+      isVideo: a.type === "VIDEO",
+      duration: a.duration != null ? String(a.duration) : undefined,
+    }));
+  }, [assets, selectedIds]);
+
+  // O(1) lookup for the grid's per-thumbnail badge overlay — `assets.find`
+  // inside the extras renderer was O(n) per photo, O(n²) per grid render.
+  const assetsById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
 
   const handleSelect = (photo: AssetPhoto, event: React.MouseEvent) => {
     const clickedIndex = images.findIndex((i) => i.id === photo.id);
@@ -673,7 +676,7 @@ export default function CullPhotosPage() {
               render={{
                 image: renderImage,
                 extras: (_, { photo }) => {
-                  const a = assets.find((x) => x.id === photo.id);
+                  const a = assetsById.get(photo.id);
                   if (!a || (!a.rating && !a.picked && !a.rejected && !a.reviewed && !a.isFavorite)) return null;
                   return (
                     <div className="pointer-events-none absolute bottom-1 left-1 flex items-center gap-1">

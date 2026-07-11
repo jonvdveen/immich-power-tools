@@ -220,6 +220,7 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
   }, [assets]);
 
   const images: AssetPhoto[] = useMemo(() => {
+    const selectedSet = new Set(selectedIds);
     return assets
       .filter((p) => !deletedIds.has(p.id))
       .map((p) => ({
@@ -229,7 +230,7 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
         width: p.exifImageWidth as number,
         height: p.exifImageHeight as number,
         orientation: 1,
-        isSelected: selectedIds.includes(p.id),
+        isSelected: selectedSet.has(p.id),
         isVideo: p.type === "VIDEO",
         duration: p.duration != null ? String(p.duration) : undefined,
       }));
@@ -309,7 +310,7 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
         key="delete"
         type="button"
         className="yarl__button"
-        title="Delete"
+        title="Move to trash"
         onClick={() => setDeleteConfirmOpen(true)}
       >
         <Trash2 className="h-6 w-6 text-white" />
@@ -363,9 +364,9 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
           <AlertDialogOverlay className="!z-[10000]" />
           <AlertDialogPrimitive.Content className="fixed left-[50%] top-[50%] z-[10001] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg">
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete asset?</AlertDialogTitle>
+              <AlertDialogTitle>Move to trash?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will permanently delete{currentAsset ? ` "${currentAsset.originalFileName}"` : " this asset"}. This action cannot be undone.
+                {currentAsset ? `"${currentAsset.originalFileName}"` : "This asset"} goes to Immich&apos;s trash (recoverable there until it&apos;s emptied), not permanent deletion.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -375,10 +376,10 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
                 onClick={async () => {
                   if (currentAsset) {
                     try {
-                      await deleteAssets([currentAsset.id]);
+                      await deleteAssets([currentAsset.id], { force: false }); // Immich trash, NOT permanent
                       setDeletedIds((prev) => new Set(prev).add(currentAsset.id));
                       onDeleteAsset?.(currentAsset.id);
-                      toast({ title: "Deleted", description: `"${currentAsset.originalFileName}" deleted.` });
+                      toast({ title: "Moved to trash", description: `"${currentAsset.originalFileName}" is in Immich's trash.` });
                       setIndex(-1);
                     } catch {
                       toast({ title: "Error", description: "Failed to delete asset.", variant: "destructive" });

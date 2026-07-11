@@ -216,10 +216,10 @@ export default function LocationManager() {
       .finally(() => setLoadingMore(false));
   };
 
-  const selectedAssets = useMemo(
-    () => assets.filter((a) => selectedIds.includes(a.id)),
-    [assets, selectedIds]
-  );
+  const selectedAssets = useMemo(() => {
+    const selectedSet = new Set(selectedIds);
+    return assets.filter((a) => selectedSet.has(a.id));
+  }, [assets, selectedIds]);
 
   const imagePins: IImagePin[] = useMemo(
     () =>
@@ -342,10 +342,11 @@ export default function LocationManager() {
   const applyCoordinates = async (ids: string[], coords: ILatLng) => {
     if (ids.length === 0) return;
     setSaving(true);
+    const idSet = new Set(ids);
     // Snapshot previous coordinates for Undo before overwriting.
     const previous: Array<[string, ILatLng]> = assets
       .filter(
-        (a) => ids.includes(a.id) && a.latitude != null && a.longitude != null
+        (a) => idSet.has(a.id) && a.latitude != null && a.longitude != null
       )
       .map((a) => [a.id, { lat: a.latitude!, lng: a.longitude! }]);
     try {
@@ -363,7 +364,7 @@ export default function LocationManager() {
         // Missing Locations clears tagged photos from its list.
         setContextState((prev) => ({
           ...prev,
-          assets: prev.assets.filter((a) => !ids.includes(a.id)),
+          assets: prev.assets.filter((a) => !idSet.has(a.id)),
           selectedIds: [],
         }));
         setTotal((t) => (t == null ? t : Math.max(0, t - ids.length)));
@@ -371,7 +372,7 @@ export default function LocationManager() {
         setContextState((prev) => ({
           ...prev,
           assets: prev.assets.map((a) =>
-            ids.includes(a.id)
+            idSet.has(a.id)
               ? { ...a, latitude: coords.lat, longitude: coords.lng }
               : a
           ),

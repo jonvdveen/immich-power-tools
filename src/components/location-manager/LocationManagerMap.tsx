@@ -93,6 +93,23 @@ export default function LocationManagerMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<maplibregl.Map | null>(null);
 
+  // The parent passes freshly-created arrow functions each render; holding
+  // them in refs keeps them out of the marker effects' dependencies, so
+  // markers are NOT torn down and recreated on every parent render (which
+  // made every grid hover rebuild hundreds of marker DOM nodes).
+  const onMapClickRef = useRef(onMapClick);
+  const onImagePinClickRef = useRef(onImagePinClick);
+  const onAllPinClickRef = useRef(onAllPinClick);
+  const onDroppedPinClickRef = useRef(onDroppedPinClick);
+  onMapClickRef.current = onMapClick;
+  onImagePinClickRef.current = onImagePinClick;
+  onAllPinClickRef.current = onAllPinClick;
+  onDroppedPinClickRef.current = onDroppedPinClick;
+
+  type IMarkerEntry = { marker: maplibregl.Marker; el: HTMLDivElement; html: string };
+  const imageMarkersRef = useRef<Map<string, IMarkerEntry>>(new Map());
+  const allMarkersRef = useRef<Map<string, IMarkerEntry>>(new Map());
+
   // Recreated whenever the style URL changes (e.g. theme toggle) — simpler
   // and safer than trying to preserve custom layers across setStyle().
   useEffect(() => {
@@ -124,72 +141,137 @@ export default function LocationManagerMap({
   useEffect(() => {
     if (!map) return;
     const handler = (e: maplibregl.MapMouseEvent) =>
-      onMapClick({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+      onMapClickRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
     map.on("click", handler);
     return () => {
       map.off("click", handler);
     };
-  }, [map, onMapClick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
+  // Drop every tracked marker when the map instance itself goes away
+  // (theme/style switch or unmount) — they belonged to the old instance.
+  useEffect(() => {
+    if (!map) return;
+    return () => {
+      imageMarkersRef.current.forEach((e) => e.marker.remove());
+      imageMarkersRef.current.clear();
+      allMarkersRef.current.forEach((e) => e.marker.remove());
+      allMarkersRef.current.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
+  /** Add/remove/move markers to match `pins`; styling happens separately. */
+  const reconcileMarkers = (
+    registry: Map<string, IMarkerEntry>,
+    pins: IImagePin[],
+    mapInstance: maplibregl.Map,
+    onClick: (id: string) => void
+  ) => {
+    const nextIds = new Set(pins.map((p) => p.id));
+    for (const [id, entry] of registry) {
+      if (!nextIds.has(id)) {
+        entry.marker.remove();
+        registry.delete(id);
+      }
+    }
+    for (const pin of pins) {
+      const entry = registry.get(pin.id);
+      if (entry) {
+        entry.marker.setLngLat([pin.lng, pin.lat]);
+        continue;
+      }
+      const el = document.createElement("div");
+      el.style.cursor = "pointer";
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onClick(pin.id);
+      });
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([pin.lng, pin.lat])
+        .addTo(mapInstance);
+      // html starts empty — the styling effect below paints it.
+      registry.set(pin.id, { marker, el, html: "" });
+    }
+  };
 
   // Image pins (one per selected photo with coordinates).
   useEffect(() => {
     if (!map) return;
-    const markers = imagePins.map((pin) => {
-      const el = document.createElement("div");
-      el.style.cursor = "pointer";
-      el.innerHTML = imagePinHtml(
-        selectedPin?.type === "image" && selectedPin.id === pin.id,
-        pin.id === highlightedAssetId
-      );
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onImagePinClick(pin.id);
-      });
-      return new maplibregl.Marker({ element: el })
-        .setLngLat([pin.lng, pin.lat])
-        .addTo(map);
-    });
-    return () => markers.forEach((m) => m.remove());
-  }, [map, imagePins, selectedPin, highlightedAssetId, onImagePinClick]);
+    reconcileMarkers(imageMarkersRef.current, imagePins, map, (id) =>
+      onImagePinClickRef.current(id)
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, imagePins]);
 
-  // "Show all on map" dots.
+  // "Show all on map" dots (selected photos are excluded — they already
+  // have an image pin).
   useEffect(() => {
     if (!map) return;
     const selectedIds = new Set(imagePins.map((p) => p.id));
-    const markers = allPins
-      .filter((pin) => !selectedIds.has(pin.id))
-      .map((pin) => {
-        const el = document.createElement("div");
-        el.style.cursor = "pointer";
-        el.innerHTML = allPinHtml(pin.id === highlightedAssetId);
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          onAllPinClick(pin.id);
-        });
-        return new maplibregl.Marker({ element: el })
-          .setLngLat([pin.lng, pin.lat])
-          .addTo(map);
-      });
-    return () => markers.forEach((m) => m.remove());
-  }, [map, allPins, imagePins, highlightedAssetId, onAllPinClick]);
+    reconcileMarkers(
+      allMarkersRef.current,
+      allPins.filter((pin) => !selectedIds.has(pin.id)),
+      map,
+      (id) => onAllPinClickRef.current(id)
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, allPins, imagePins]);
 
-  // Dropped/candidate pin.
+  // Selection/hover styling — rewrites only the markers whose look actually
+  // changed (typically 2 per hover transition), not the whole set.
+  useEffect(() => {
+    for (const [id, entry] of imageMarkersRef.current) {
+      const html = imagePinHtml(
+        selectedPin?.type === "image" && selectedPin.id === id,
+        id === highlightedAssetId
+      );
+      if (entry.html !== html) {
+        entry.el.innerHTML = html;
+        entry.html = html;
+      }
+    }
+    for (const [id, entry] of allMarkersRef.current) {
+      const html = allPinHtml(id === highlightedAssetId);
+      if (entry.html !== html) {
+        entry.el.innerHTML = html;
+        entry.html = html;
+      }
+    }
+  }, [map, imagePins, allPins, selectedPin, highlightedAssetId]);
+
+  // Dropped/candidate pin — a single marker, recreated only when its
+  // coordinates change; selection styling is updated in place.
+  const droppedRef = useRef<IMarkerEntry | null>(null);
   useEffect(() => {
     if (!map || !droppedPin) return;
     const el = document.createElement("div");
     el.style.cursor = "pointer";
-    el.innerHTML = droppedPinHtml(selectedPin?.type === "dropped");
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      onDroppedPinClick();
+      onDroppedPinClickRef.current();
     });
     const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
       .setLngLat([droppedPin.lng, droppedPin.lat])
       .addTo(map);
+    droppedRef.current = { marker, el, html: "" };
     return () => {
       marker.remove();
+      droppedRef.current = null;
     };
-  }, [map, droppedPin, selectedPin, onDroppedPinClick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, droppedPin]);
+
+  useEffect(() => {
+    const entry = droppedRef.current;
+    if (!entry) return;
+    const html = droppedPinHtml(selectedPin?.type === "dropped");
+    if (entry.html !== html) {
+      entry.el.innerHTML = html;
+      entry.html = html;
+    }
+  }, [map, droppedPin, selectedPin]);
 
   // Fit to the selected photos' pins whenever that set changes.
   const imagePinsSignature = imagePins
