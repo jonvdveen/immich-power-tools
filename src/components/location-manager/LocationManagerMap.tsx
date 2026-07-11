@@ -48,17 +48,21 @@ interface LocationManagerMapProps {
 }
 
 // Image pins are dots (one per selected photo); the dropped/candidate pin is
-// a classic teardrop so the two never read as the same thing. The selected
-// pin gets an amber ring; the grid-hovered photo's pin gets a cyan ring.
+// a classic teardrop so the two never read as the same thing. Whichever one
+// is actively selected is blue with an orange outline; everything else is
+// dark grey. The grid-hovered photo's pin additionally gets a cyan ring so
+// hover-linkage still reads even though it isn't "selection."
+const SELECTED_FILL = "#2563eb";
+const SELECTED_OUTLINE = "#f97316";
+const UNSELECTED_FILL = "#4b5563";
+
 const imagePinIcon = (selected: boolean, highlighted: boolean) =>
   L.divIcon({
     className: "",
-    html: `<div style="width:16px;height:16px;border-radius:9999px;background:#2563eb;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.55)${
-      selected
-        ? ";outline:3px solid #f59e0b;outline-offset:1px"
-        : highlighted
-          ? ";outline:3px solid #06b6d4;outline-offset:1px"
-          : ""
+    html: `<div style="width:16px;height:16px;border-radius:9999px;background:${
+      selected ? SELECTED_FILL : UNSELECTED_FILL
+    };border:${selected ? `3px solid ${SELECTED_OUTLINE}` : "2px solid #fff"};box-shadow:0 1px 4px rgba(0,0,0,.55)${
+      highlighted ? ";outline:3px solid #06b6d4;outline-offset:1px" : ""
     }"></div>`,
     iconSize: [16, 16],
     iconAnchor: [8, 8],
@@ -68,8 +72,10 @@ const droppedPinIcon = (selected: boolean) =>
   L.divIcon({
     className: "",
     html: `<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));overflow:visible">
-      <path d="M15 1C7.3 1 1 7.3 1 15c0 10.5 14 26 14 26s14-15.5 14-26C29 7.3 22.7 1 15 1z" fill="#ea580c"${
-        selected ? ' stroke="#f59e0b" stroke-width="2.5"' : ' stroke="#fff" stroke-width="1.5"'
+      <path d="M15 1C7.3 1 1 7.3 1 15c0 10.5 14 26 14 26s14-15.5 14-26C29 7.3 22.7 1 15 1z" fill="${
+        selected ? SELECTED_FILL : UNSELECTED_FILL
+      }"${
+        selected ? ` stroke="${SELECTED_OUTLINE}" stroke-width="3"` : ' stroke="#fff" stroke-width="1.5"'
       }/>
       <circle cx="15" cy="15" r="5.5" fill="#fff"/>
     </svg>`,
@@ -162,19 +168,29 @@ export default function LocationManagerMap({
       style={{ minHeight: 300 }}
     >
       {isDarkMode ? (
-        <TileLayer
-          key="dark"
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={20}
-        />
+        <>
+          {/* Esri's Dark Gray Canvas base + its separate labels ("reference")
+              layer — unlike plain OSM/CARTO tiles, Esri's label data carries
+              an English name alongside the local script (verified: Tokyo
+              street tiles read "Dogenzaka" next to the kanji, not kanji-only),
+              so foreign-script regions stay legible. */}
+          <TileLayer
+            key="dark-base"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+            attribution="Tiles &copy; Esri — Esri, DeLorme, NAVTEQ"
+            maxNativeZoom={16}
+          />
+          <TileLayer
+            key="dark-labels"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+            maxNativeZoom={16}
+          />
+        </>
       ) : (
         <TileLayer
           key="light"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          maxZoom={20}
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+          attribution="Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom"
         />
       )}
       <MapClickHandler onMapClick={onMapClick} />
@@ -189,9 +205,9 @@ export default function LocationManagerMap({
             center={[pin.lat, pin.lng]}
             radius={pin.id === highlightedAssetId ? 8 : 4}
             pathOptions={{
-              color: pin.id === highlightedAssetId ? "#06b6d4" : "#8b5cf6",
-              fillColor: "#8b5cf6",
-              fillOpacity: 0.7,
+              color: pin.id === highlightedAssetId ? "#06b6d4" : "#374151",
+              fillColor: UNSELECTED_FILL,
+              fillOpacity: 0.8,
               weight: pin.id === highlightedAssetId ? 3 : 1,
             }}
             eventHandlers={{ click: () => onAllPinClick(pin.id) }}

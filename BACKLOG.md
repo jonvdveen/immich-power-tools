@@ -105,6 +105,31 @@ context in project memory (`immich-power-tools-cull.md`,
 
 ## Location Manager (`/assets/location-manager`)
 
+- Post-v0.30.1 pass (2026-07-11, unreleased): **map tiles switched from
+  OSM/CARTO to Esri** (`World_Street_Map` for light,
+  `Canvas/World_Dark_Gray_Base`+`Reference` stacked for dark) — the
+  household complaint was that place names in non-Latin-script regions
+  (tested: Shibuya, Tokyo) were unreadable kanji-only. Verified live via
+  raw tile fetches before committing: plain OSM/CARTO tiles at that
+  location are kanji-only; Esri's tiles show the English/romanized name
+  alongside the local script ("Shibuya Sta." / "Dogenzaka1"). Note this is
+  bilingual, not English-only — no free keyless raster provider guarantees
+  pure-English labels everywhere, this was the best verified option.
+  Pin/dot colors also redone: the actively selected object (dropped pin or
+  a clicked image pin) is blue with an orange outline; everything
+  unselected (image pins, "show all" dots) is dark grey — grid-hover still
+  adds a cyan ring on top of either state. Further layout changes:
+  search box moved to sit immediately above "Map Coordinates (Selected)"
+  (renamed from "Map Coordinates"), which gained its own "Copy Map GPS"
+  button; "Copy Image GPS" + a shortened Image Coordinates box + "Update"
+  moved out of the sidebar into the (still-conditional) selection bar atop
+  the grid; "All on map" toggle moved into a brand-new **always-visible**
+  row above that selection bar, alongside new Back/Forward buttons that
+  jump the selection to the previous/next currently-loaded photo lacking
+  GPS (wraps around; client-side over loaded photos only, same scope as
+  the map's other interactions); "Manage favourites" is icon-only now (no
+  label, no count); Paste moved into the favourites row and reads "Paste
+  Image/Map GPS" (was "…Location").
 - Post-v0.30.0 layout pass (2026-07-10, unreleased): sidebar split into two
   visually distinct sections — top (bg-muted/30, border-b-2): search box,
   a Copy/Paste row (**Copy Image GPS**, **Copy Map GPS**, **Paste

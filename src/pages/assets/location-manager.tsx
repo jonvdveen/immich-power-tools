@@ -47,6 +47,8 @@ import {
   Calendar as CalendarIcon,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCopy,
   ClipboardPaste,
   Expand,
@@ -521,6 +523,31 @@ export default function LocationManager() {
     flashTimer.current = setTimeout(() => setFlashedAssetId(null), 1800);
   };
 
+  // Photos without GPS, in the grid's current order — what Back/Forward
+  // step through. Operates on currently-loaded photos only, same as every
+  // other client-side interaction here (map pins, hover, etc.).
+  const missingGpsAssets = useMemo(
+    () => assets.filter((a) => a.latitude == null || a.longitude == null),
+    [assets]
+  );
+
+  const jumpToMissingGps = (direction: 1 | -1) => {
+    if (missingGpsAssets.length === 0) return;
+    const anchorId = selectedIds[0];
+    const anchorIndex = anchorId
+      ? missingGpsAssets.findIndex((a) => a.id === anchorId)
+      : -1;
+    const nextIndex =
+      anchorIndex === -1
+        ? direction === 1
+          ? 0
+          : missingGpsAssets.length - 1
+        : (anchorIndex + direction + missingGpsAssets.length) % missingGpsAssets.length;
+    const target = missingGpsAssets[nextIndex];
+    updateContext({ selectedIds: [target.id] });
+    flashPhoto(target.id);
+  };
+
   // Per-thumbnail overlays: green/red GPS chip (bottom-left) and an expand
   // button (bottom-right) that opens the large preview — clicking the photo
   // itself selects it and shows its pin on the map.
@@ -557,9 +584,9 @@ export default function LocationManager() {
 
   const pasteLabel = clipboard
     ? clipboard.source === "image"
-      ? "Paste Image Location"
-      : "Paste Map Location"
-    : "Paste Location";
+      ? "Paste Image GPS"
+      : "Paste Map GPS"
+    : "Paste GPS";
 
   const hasDateFilter = !!(dateFrom || dateTo);
   const hasAnyFilter = !!(albumId || gpsStatus !== "all" || hasDateFilter);
@@ -585,19 +612,6 @@ export default function LocationManager() {
         }
         rightComponent={
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 mr-1">
-              <Switch
-                id="show-all-on-map"
-                checked={showAllOnMap}
-                onCheckedChange={setShowAllOnMap}
-              />
-              <Label
-                htmlFor="show-all-on-map"
-                className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap"
-              >
-                All on map
-              </Label>
-            </div>
             <AlbumDropdown
               albumIds={albumId ? [albumId] : []}
               onChange={(albumIds) => setFilters({ albumId: albumIds?.[0] })}
@@ -694,12 +708,48 @@ export default function LocationManager() {
           style={{ height: "calc(100vh - 60px)" }}
         >
           <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+            {/* Always visible — never hidden by selection state. */}
+            <div className="shrink-0 border-b bg-background px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Switch
+                  id="show-all-on-map"
+                  checked={showAllOnMap}
+                  onCheckedChange={setShowAllOnMap}
+                />
+                <Label
+                  htmlFor="show-all-on-map"
+                  className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap"
+                >
+                  All on map
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Previous photo without GPS"
+                  disabled={missingGpsAssets.length === 0}
+                  onClick={() => jumpToMissingGps(-1)}
+                >
+                  <ChevronLeft size={16} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Next photo without GPS"
+                  disabled={missingGpsAssets.length === 0}
+                  onClick={() => jumpToMissingGps(1)}
+                >
+                  <ChevronRight size={16} />
+                </Button>
+              </div>
+            </div>
             {selectedIds.length > 0 && (
-              <div className="shrink-0 border-b bg-background px-3 py-2 flex items-center justify-between gap-2">
-                <p className="text-sm text-muted-foreground whitespace-nowrap">
-                  {selectedIds.length} Selected
-                </p>
-                <div className="flex items-center gap-2">
+              <div className="shrink-0 border-b bg-background px-3 py-2 flex flex-col gap-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm text-muted-foreground whitespace-nowrap">
+                    {selectedIds.length} Selected
+                  </p>
                   {selectedIds.length < assets.length && (
                     <Button
                       variant="outline"
@@ -718,7 +768,58 @@ export default function LocationManager() {
                   >
                     Deselect all
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canCopyImageLocation}
+                    title="Copy this image's coordinates"
+                    className={activeButtonClass(canCopyImageLocation, "green")}
+                    onClick={copyImageLocation}
+                  >
+                    <ClipboardCopy size={14} className="mr-1" /> Copy Image GPS
+                  </Button>
+                  <Input
+                    value={imageCoordsDraft}
+                    disabled={selectedIds.length === 0}
+                    placeholder={
+                      selectedIds.length === 0
+                        ? "Select images first"
+                        : "lat, long"
+                    }
+                    className={`w-40 h-8 text-sm shrink-0 ${imageCoordsError ? "border-destructive" : ""}`}
+                    onChange={(e) => {
+                      setImageCoordsDraft(e.target.value);
+                      setImageCoordsError(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleUpdateClick();
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    title="Update Image Coordinates"
+                    disabled={
+                      !imageCoordsDraft.trim() ||
+                      selectedIds.length === 0 ||
+                      saving
+                    }
+                    onClick={handleUpdateClick}
+                  >
+                    {saving ? "Updating..." : "Update"}
+                  </Button>
+                  <AlertDialog
+                    ref={updateConfirmRef}
+                    title="Update location?"
+                    description={`Set the location of ${selectedIds.length} selected photo${selectedIds.length === 1 ? "" : "s"} to ${pendingUpdateCoords ? formatCoordinates(pendingUpdateCoords) : imageCoordsDraft}. This can't be undone automatically for photos that had no location before.`}
+                    onConfirm={confirmUpdate}
+                  />
                 </div>
+                {imageCoordsError && (
+                  <p className="text-xs text-destructive">
+                    Couldn&apos;t read those coordinates — try &quot;latitude, longitude&quot;.
+                  </p>
+                )}
               </div>
             )}
             <div className="flex-1 overflow-y-auto">
@@ -762,41 +863,8 @@ export default function LocationManager() {
           </div>
 
           <div className="w-full lg:w-[440px] xl:w-[500px] shrink-0 border-t lg:border-t-0 lg:border-l flex flex-col h-[50vh] lg:h-auto">
-            {/* Top section: search + copy/paste + favourites */}
+            {/* Top section: favourites + paste */}
             <div className="flex flex-col gap-3 p-3 bg-muted/30 border-b-2 border-border">
-              <LocationSearchBox onSelect={handleSearchSelect} />
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!canCopyImageLocation}
-                  title="Copy this image's coordinates"
-                  className={activeButtonClass(canCopyImageLocation, "green")}
-                  onClick={copyImageLocation}
-                >
-                  <ClipboardCopy size={14} className="mr-1" /> Copy Image GPS
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!selectedPinCoords}
-                  title="Copy the selected pin's coordinates"
-                  className={activeButtonClass(!!selectedPinCoords, "green")}
-                  onClick={copyMapLocation}
-                >
-                  <ClipboardCopy size={14} className="mr-1" /> Copy Map GPS
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!clipboard || selectedIds.length === 0 || saving}
-                  title="Apply the copied coordinates to all selected images"
-                  className={activeButtonClass(!!clipboard, "blue")}
-                  onClick={pasteLocation}
-                >
-                  <ClipboardPaste size={14} className="mr-1" /> {pasteLabel}
-                </Button>
-              </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -886,79 +954,54 @@ export default function LocationManager() {
                   onApply={handleApplyFavorite}
                   onShowOnMap={handleShowFavoriteOnMap}
                 />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!clipboard || selectedIds.length === 0 || saving}
+                  title="Apply the copied coordinates to all selected images"
+                  className={activeButtonClass(!!clipboard, "blue")}
+                  onClick={pasteLocation}
+                >
+                  <ClipboardPaste size={14} className="mr-1" /> {pasteLabel}
+                </Button>
               </div>
             </div>
 
-            {/* Bottom section: coordinate fields + map */}
+            {/* Bottom section: search + map coordinates + map */}
             <div className="flex flex-col flex-1 min-h-0">
               <div className="p-3 flex flex-col gap-3 border-b">
+                <LocationSearchBox onSelect={handleSearchSelect} />
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs text-muted-foreground">
-                    Image Coordinates
+                    Map Coordinates (Selected)
                   </Label>
                   <div className="flex gap-2">
                     <Input
-                      value={imageCoordsDraft}
-                      disabled={selectedIds.length === 0}
-                      placeholder={
-                        selectedIds.length === 0
-                          ? "Select images first"
-                          : "Mixed or no coordinates — paste or type lat, long"
-                      }
-                      className={imageCoordsError ? "border-destructive" : ""}
+                      value={mapCoordsDraft}
+                      placeholder="Click the map, search, or type lat, long"
+                      className={mapCoordsError ? "border-destructive" : ""}
                       onChange={(e) => {
-                        setImageCoordsDraft(e.target.value);
-                        setImageCoordsError(false);
+                        setMapCoordsDraft(e.target.value);
+                        setMapCoordsError(false);
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") handleUpdateClick();
+                        if (e.key === "Enter") commitMapCoordinates();
+                      }}
+                      onBlur={() => {
+                        if (mapCoordsDraft !== selectedPinKey) commitMapCoordinates();
                       }}
                     />
                     <Button
                       size="sm"
-                      className="shrink-0"
-                      title="Update Image Coordinates"
-                      disabled={
-                        !imageCoordsDraft.trim() ||
-                        selectedIds.length === 0 ||
-                        saving
-                      }
-                      onClick={handleUpdateClick}
+                      variant="outline"
+                      className={`shrink-0 ${activeButtonClass(!!selectedPinCoords, "green")}`}
+                      disabled={!selectedPinCoords}
+                      title="Copy the selected pin's coordinates"
+                      onClick={copyMapLocation}
                     >
-                      {saving ? "Updating..." : "Update"}
+                      <ClipboardCopy size={14} className="mr-1" /> Copy Map GPS
                     </Button>
                   </div>
-                  {imageCoordsError && (
-                    <p className="text-xs text-destructive">
-                      Couldn&apos;t read those coordinates — try &quot;latitude, longitude&quot;.
-                    </p>
-                  )}
-                  <AlertDialog
-                    ref={updateConfirmRef}
-                    title="Update location?"
-                    description={`Set the location of ${selectedIds.length} selected photo${selectedIds.length === 1 ? "" : "s"} to ${pendingUpdateCoords ? formatCoordinates(pendingUpdateCoords) : imageCoordsDraft}. This can't be undone automatically for photos that had no location before.`}
-                    onConfirm={confirmUpdate}
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-xs text-muted-foreground">
-                    Map Coordinates
-                  </Label>
-                  <Input
-                    value={mapCoordsDraft}
-                    placeholder="Click the map, search, or type lat, long"
-                    className={mapCoordsError ? "border-destructive" : ""}
-                    onChange={(e) => {
-                      setMapCoordsDraft(e.target.value);
-                      setMapCoordsError(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") commitMapCoordinates();
-                    }}
-                    onBlur={() => {
-                      if (mapCoordsDraft !== selectedPinKey) commitMapCoordinates();
-                    }}
-                  />
                   {mapCoordsError && (
                     <p className="text-xs text-destructive">
                       Couldn&apos;t read those coordinates — try &quot;latitude, longitude&quot;.

@@ -218,14 +218,8 @@ export default function FavoritesSheet({
       }}
     >
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm" title="Add, rename, reorder, or delete your favourite locations">
-          <Settings2 size={14} className="mr-1" />
-          Manage favourites
-          {favorites.length > 0 && (
-            <span className="ml-1.5 text-xs text-muted-foreground">
-              {favorites.length}
-            </span>
-          )}
+        <Button variant="outline" size="sm" title="Manage favourites">
+          <Settings2 size={14} />
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="flex flex-col w-[380px] sm:max-w-[380px]">
