@@ -2,8 +2,8 @@ import "react-photo-album/rows.css";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Archive, CheckCircle2, ChevronLeft, ChevronRight, Circle, ExternalLink, Glasses, Heart, Info,
-  Loader2, SortAsc, SortDesc, Star, Trash2, X, XCircle,
+  Archive, CheckCircle2, ChevronLeft, ChevronRight, Circle, ExternalLink, Filter, Glasses, Heart,
+  Info, Loader2, SortAsc, SortDesc, Star, Trash2, X, XCircle,
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
@@ -532,21 +532,12 @@ export default function CullPhotosPage() {
   const cycleRatingComparator = () =>
     setRatingComparator((prev) => (prev === "gt" ? "eq" : prev === "eq" ? "lt" : "gt"));
 
-  const shortcutHint =
-    `1–5 rate · ${displayKey(shortcuts.pick)} pick · ${displayKey(shortcuts.reject)} reject · ` +
-    `${displayKey(shortcuts.unflag)} unflag · ${displayKey(shortcuts.reviewed)} reviewed · ` +
-    `${displayKey(shortcuts.favorite)} favorite · ${displayKey(shortcuts.info)} info · ` +
-    `←/→ navigate · Esc close/clear`;
-
   return (
     <PageLayout title="Rate & Cull">
       <Header
         leftComponent="Rate & Cull"
         rightComponent={
           <div className="flex items-center gap-2">
-            {/* Keyboard-only info — pointless on touch, and it wrapped the
-                mobile header to three lines. */}
-            <span className="hidden xl:inline text-xs text-muted-foreground">{shortcutHint}</span>
             <ShortcutSettings
               open={shortcutsOpen}
               onOpenChange={setShortcutsOpen}
@@ -611,6 +602,9 @@ export default function CullPhotosPage() {
             Deselect all
           </Button>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Filter size={14} /> Filters
+            </span>
             {/* Pick status — multi-select */}
             <div className="flex items-center gap-0.5 rounded-md border p-0.5">
               <button
@@ -749,11 +743,15 @@ export default function CullPhotosPage() {
 
       {/* bulk action bar */}
       {selectionActive && viewerIndex === null && (
-        <FloatingBar className="!max-w-4xl flex-wrap gap-2">
-          <span className="px-2 text-sm font-semibold whitespace-nowrap">{selectedIds.length} selected</span>
+        <FloatingBar className="!max-w-[95vw] w-fit flex-wrap justify-center gap-2">
+          <div className="flex flex-col px-2 whitespace-nowrap">
+            <span className="text-sm font-semibold">{selectedIds.length} selected</span>
+            <span className="text-[10px] leading-tight text-muted-foreground">Rating controls</span>
+          </div>
           {/* Rating — shows the selection's shared rating; clicking the lit
               star clears it (no separate clear-rating button). */}
           <div className="flex items-center rounded-md border p-0.5">
+            <span className="pl-1.5 text-[10px] font-medium text-muted-foreground select-none">1–5</span>
             <StarRow
               value={sharedSelectedRating}
               size={16}
@@ -763,6 +761,9 @@ export default function CullPhotosPage() {
           </div>
           {/* Pick status */}
           <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <span className="px-1 text-[10px] font-medium text-muted-foreground select-none">
+              {displayKey(shortcuts.pick)}/{displayKey(shortcuts.reject)}/{displayKey(shortcuts.unflag)}
+            </span>
             <Button size="sm" variant="ghost" className="h-7 px-2" title={`Pick (${displayKey(shortcuts.pick)})`} onClick={() => flagAssets(selectedIds, "pick")}>
               <CheckCircle2 size={15} className="text-emerald-500" />
             </Button>
@@ -775,6 +776,7 @@ export default function CullPhotosPage() {
           </div>
           {/* Review status */}
           <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <span className="px-1 text-[10px] font-medium text-muted-foreground select-none">{displayKey(shortcuts.reviewed)}</span>
             <Button size="sm" variant="ghost" className="h-7 px-2" title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`} onClick={() => reviewAssets(selectedIds, true)}>
               <Glasses size={15} className="text-sky-500" />
             </Button>
@@ -784,6 +786,7 @@ export default function CullPhotosPage() {
           </div>
           {/* Favorite */}
           <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <span className="px-1 text-[10px] font-medium text-muted-foreground select-none">{displayKey(shortcuts.favorite)}</span>
             <Button size="sm" variant="ghost" className="h-7 px-2" title={`Favorite (${displayKey(shortcuts.favorite)})`} onClick={() => favoriteAssets(selectedIds, true)}>
               <Heart size={15} className="fill-pink-500 text-pink-500" />
             </Button>
