@@ -103,6 +103,55 @@ context in project memory (`immich-power-tools-cull.md`,
   `AlertDialog` ref-imperative pattern (`PersonItem.tsx` precedent) rather
   than as a visible nested trigger, for the same reason.
 
+## Maps (app-wide)
+
+- **Migrated every map surface from Leaflet (raster tiles) to MapLibre GL
+  (vector tiles) on 2026-07-11**, pointed at the exact same tile source
+  Immich's own web app uses — `GET {exImmichUrl}/api/server/config`'s
+  `mapLightStyleUrl`/`mapDarkStyleUrl` (public, unauthenticated, the same
+  call Immich's frontend makes pre-login), which default to
+  `tiles.immich.cloud`'s Protomaps-built vector tiles from OpenStreetMap.
+  New shared hook: `src/hooks/useImmichMapStyle.ts` (module-level cache,
+  hardcoded fallback to Immich's shipped defaults if the fetch fails).
+  Why: raster tiles bake in label language server-side at PNG-render
+  time, a hard ceiling every raster provider hit (OSM/CARTO = local
+  script only; Esri = English but stale data, reverted same day). Vector
+  tiles let the *client* choose — Immich's style literally does
+  `coalesce(name:en, name)` — so this gets OSM's fast-updating community
+  data and English-preferring labels at once, with zero new API keys
+  (confirmed live: Shibuya, Tokyo shows "Shibuya City Office" style
+  bilingual labels; a heatmap over the household's real travel history
+  renders correctly; AssetInfoPanel's mini-map renders terrain
+  accurately).
+  - Converted: `LocationManagerMap.tsx` (full interactive map — pins,
+    click-to-drop, fitBounds/flyTo, all imperative `maplibregl.Marker`
+    DOM elements instead of react-leaflet's declarative `<Marker>`,
+    since there's no equivalently mature React binding for MapLibre —
+    `react-map-gl` was considered and rejected to avoid a new
+    dependency's peer-conflict risk on React 19); `LeafletHeatMap.tsx`
+    → new `MapLibreHeatMap.tsx` (native GPU `heatmap` layer type, nicer
+    than the old `leaflet.heat` canvas plugin); Missing Locations'
+    `TagMissingLocationDialog/Map.tsx` (click-to-place single marker;
+    `CustomMarker.tsx` deleted, folded inline since MapLibre markers are
+    imperative, not JSX); `AssetInfoPanel.tsx`'s inline `MiniMap`.
+  - Removed: `leaflet`, `react-leaflet`, `leaflet.heat`,
+    `@types/leaflet`, `@types/leaflet.heat`. Added: `maplibre-gl`.
+  - **Gotcha hit during this migration**: the Dockerfile's deps stage
+    uses **Bun** (`bun install --frozen-lockfile` against `bun.lock`),
+    not npm — `npm install` (used all session for local dev/typecheck)
+    only touches `package-lock.json` and never updates `bun.lock`, so
+    the first rebuild after editing `package.json` failed at the Docker
+    layer with "lockfile had changes, but lockfile is frozen." Fix:
+    regenerate `bun.lock` via `docker run --rm -v $(pwd):/app -w /app
+    oven/bun:1-alpine bun install` before rebuilding. This hadn't bitten
+    before because this session's package.json was never touched until
+    now (the location_favorites work only touched the separate Drizzle
+    migration system). Also caught mid-fix: `docker build ... | tail
+    -N; echo $?` reports **tail's** exit code, not docker build's — a
+    bug in this session's own verification commands that silently
+    printed "build exit: 0" even on the failed build; use `docker build
+    ... > file.log 2>&1; echo $?` (no pipe) to get the real status.
+
 ## Location Manager (`/assets/location-manager`)
 
 - **LOC-3**: Back/Forward (jump to next/previous missing-GPS photo) only

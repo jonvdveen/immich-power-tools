@@ -19,19 +19,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
-
-// Fix default marker icons for bundlers that don't support ~ aliases
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
-import markerIcon from 'leaflet/dist/images/marker-icon.png'
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'
-
-L.Icon.Default.mergeOptions({
-  iconUrl: typeof markerIcon === 'string' ? markerIcon : markerIcon.src,
-  iconRetinaUrl: typeof markerIcon2x === 'string' ? markerIcon2x : markerIcon2x.src,
-  shadowUrl: typeof markerShadow === 'string' ? markerShadow : markerShadow.src,
-})
+import maplibregl from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import { useImmichMapStyle } from '@/hooks/useImmichMapStyle'
 
 export interface IAssetDetail {
   id: string
@@ -192,46 +182,30 @@ function PersonChip({ person: p, exImmichUrl, isHidden: hidden, onUpdate }: Pers
 
 function MiniMap({ latitude, longitude }: { latitude: number; longitude: number }) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<L.Map | null>(null)
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  const styleUrl = useImmichMapStyle(isDark)
 
   useEffect(() => {
     if (!mapContainerRef.current) return
 
-    // Check if dark mode
-    const isDark = document.documentElement.classList.contains('dark')
-
-    const map = L.map(mapContainerRef.current, {
-      center: [latitude, longitude],
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: styleUrl,
+      center: [longitude, latitude],
       zoom: 14,
-      zoomControl: true,
-      scrollWheelZoom: false,
-      dragging: true,
-      doubleClickZoom: true,
+      scrollZoom: false,
       attributionControl: false,
     })
-
-    mapRef.current = map
-
-    const tileLayer = isDark
-      ? L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          subdomains: 'abcd',
-          maxZoom: 20,
-        })
-      : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 20,
-        })
-
-    tileLayer.addTo(map)
-    L.marker([latitude, longitude]).addTo(map)
-
-    // Force resize after render
-    setTimeout(() => map.invalidateSize(), 100)
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
+    map.on('load', () => {
+      new maplibregl.Marker().setLngLat([longitude, latitude]).addTo(map)
+      map.resize()
+    })
 
     return () => {
       map.remove()
-      mapRef.current = null
     }
-  }, [latitude, longitude])
+  }, [latitude, longitude, styleUrl])
 
   return (
     <div className="rounded-lg overflow-hidden border h-[160px]">

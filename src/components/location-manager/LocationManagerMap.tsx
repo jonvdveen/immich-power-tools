@@ -1,19 +1,10 @@
 "use client";
 
-// IMPORTANT: the order matters!
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-
-import {
-  CircleMarker,
-  MapContainer,
-  Marker,
-  TileLayer,
-  useMap,
-  useMapEvents,
-} from "react-leaflet";
-import { useEffect } from "react";
+import "maplibre-gl/dist/maplibre-gl.css";
+import maplibregl from "maplibre-gl";
+import { useEffect, useRef, useState } from "react";
 import { ILatLng } from "@/lib/location-manager/coordinates";
+import { useImmichMapStyle } from "@/hooks/useImmichMapStyle";
 
 export interface IImagePin {
   id: string;
@@ -55,84 +46,34 @@ interface LocationManagerMapProps {
 const SELECTED_OUTLINE = "#f97316";
 const UNSELECTED_FILL = "#4b5563";
 
-const imagePinIcon = (selected: boolean, highlighted: boolean) =>
-  L.divIcon({
-    className: "",
-    html: `<div style="width:16px;height:16px;border-radius:9999px;background:${UNSELECTED_FILL};border:${
-      selected ? `3px solid ${SELECTED_OUTLINE}` : "2px solid #fff"
-    };box-shadow:0 1px 4px rgba(0,0,0,.55)${
-      highlighted ? ";outline:3px solid #06b6d4;outline-offset:1px" : ""
-    }"></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-  });
-
-const droppedPinIcon = (selected: boolean) =>
-  L.divIcon({
-    className: "",
-    html: `<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));overflow:visible">
-      <path d="M15 1C7.3 1 1 7.3 1 15c0 10.5 14 26 14 26s14-15.5 14-26C29 7.3 22.7 1 15 1z" fill="${UNSELECTED_FILL}"${
-        selected ? ` stroke="${SELECTED_OUTLINE}" stroke-width="3"` : ' stroke="#fff" stroke-width="1.5"'
-      }/>
-      <circle cx="15" cy="15" r="5.5" fill="#fff"/>
-    </svg>`,
-    iconSize: [30, 42],
-    iconAnchor: [15, 40],
-  });
-
-function MapClickHandler({ onMapClick }: { onMapClick: (coords: ILatLng) => void }) {
-  useMapEvents({
-    click: (e) => onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng }),
-  });
-  return null;
+function imagePinHtml(selected: boolean, highlighted: boolean): string {
+  return `<div style="width:16px;height:16px;border-radius:9999px;background:${UNSELECTED_FILL};border:${
+    selected ? `3px solid ${SELECTED_OUTLINE}` : "2px solid #fff"
+  };box-shadow:0 1px 4px rgba(0,0,0,.55)${
+    highlighted ? ";outline:3px solid #06b6d4;outline-offset:1px" : ""
+  }"></div>`;
 }
 
-function FitToPins({ imagePins }: { imagePins: IImagePin[] }) {
-  const map = useMap();
-  const signature = imagePins
-    .map((p) => `${p.id}:${p.lat.toFixed(5)},${p.lng.toFixed(5)}`)
-    .join("|");
-  useEffect(() => {
-    if (imagePins.length === 0) return;
-    if (imagePins.length === 1) {
-      // Street-ish level for a lone photo — city level (10) was too far out.
-      map.setView([imagePins[0].lat, imagePins[0].lng], Math.max(map.getZoom(), 13));
-    } else {
-      map.fitBounds(
-        L.latLngBounds(imagePins.map((p) => [p.lat, p.lng] as [number, number])),
-        { padding: [40, 40], maxZoom: 15 }
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
-  return null;
+function droppedPinHtml(selected: boolean): string {
+  return `<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));overflow:visible">
+    <path d="M15 1C7.3 1 1 7.3 1 15c0 10.5 14 26 14 26s14-15.5 14-26C29 7.3 22.7 1 15 1z" fill="${UNSELECTED_FILL}"${
+      selected ? ` stroke="${SELECTED_OUTLINE}" stroke-width="3"` : ' stroke="#fff" stroke-width="1.5"'
+    }/>
+    <circle cx="15" cy="15" r="5.5" fill="#fff"/>
+  </svg>`;
 }
 
-// When "show all" turns on, fit the view to everything once.
-function FitToAllOnce({ pins, active }: { pins: IImagePin[]; active: boolean }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!active || pins.length === 0) return;
-    map.fitBounds(
-      L.latLngBounds(pins.map((p) => [p.lat, p.lng] as [number, number])),
-      { padding: [40, 40], maxZoom: 15 }
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-  return null;
+function allPinHtml(highlighted: boolean): string {
+  const size = highlighted ? 16 : 8;
+  return `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${UNSELECTED_FILL};border:${
+    highlighted ? "3px solid #06b6d4" : "1px solid #374151"
+  };opacity:0.85"></div>`;
 }
 
-function FlyToHandler({ flyTo }: { flyTo: IFlyTo | null }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!flyTo) return;
-    map.setView(
-      [flyTo.coords.lat, flyTo.coords.lng],
-      flyTo.zoom ?? Math.max(map.getZoom(), 10)
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flyTo?.ts]);
-  return null;
+function boundsOf(pins: IImagePin[]): maplibregl.LngLatBounds {
+  const bounds = new maplibregl.LngLatBounds();
+  pins.forEach((p) => bounds.extend([p.lng, p.lat]));
+  return bounds;
 }
 
 export default function LocationManagerMap({
@@ -148,77 +89,143 @@ export default function LocationManagerMap({
   onDroppedPinClick,
   flyTo,
 }: LocationManagerMapProps) {
-  // Don't draw a dot underneath a photo's own selected pin.
-  const selectedIds = new Set(imagePins.map((p) => p.id));
+  const styleUrl = useImmichMapStyle(isDarkMode);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [map, setMap] = useState<maplibregl.Map | null>(null);
+
+  // Recreated whenever the style URL changes (e.g. theme toggle) — simpler
+  // and safer than trying to preserve custom layers across setStyle().
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const instance = new maplibregl.Map({
+      container: containerRef.current,
+      style: styleUrl,
+      center: [0, 20],
+      zoom: 1,
+      minZoom: 1,
+      maxZoom: 18,
+      attributionControl: false,
+    });
+    instance.addControl(new maplibregl.AttributionControl({
+      customAttribution: "Basemap © Protomaps, © OpenStreetMap contributors",
+    }));
+    instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
+    instance.on("load", () => setMap(instance));
+    return () => {
+      instance.remove();
+      setMap(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styleUrl]);
+
+  // Map click → drop/select a candidate pin. Clicking a marker's own DOM
+  // element never reaches this (markers are separate overlay nodes, not
+  // part of the canvas the map's own click listener is bound to).
+  useEffect(() => {
+    if (!map) return;
+    const handler = (e: maplibregl.MapMouseEvent) =>
+      onMapClick({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+    map.on("click", handler);
+    return () => {
+      map.off("click", handler);
+    };
+  }, [map, onMapClick]);
+
+  // Image pins (one per selected photo with coordinates).
+  useEffect(() => {
+    if (!map) return;
+    const markers = imagePins.map((pin) => {
+      const el = document.createElement("div");
+      el.style.cursor = "pointer";
+      el.innerHTML = imagePinHtml(
+        selectedPin?.type === "image" && selectedPin.id === pin.id,
+        pin.id === highlightedAssetId
+      );
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onImagePinClick(pin.id);
+      });
+      return new maplibregl.Marker({ element: el })
+        .setLngLat([pin.lng, pin.lat])
+        .addTo(map);
+    });
+    return () => markers.forEach((m) => m.remove());
+  }, [map, imagePins, selectedPin, highlightedAssetId, onImagePinClick]);
+
+  // "Show all on map" dots.
+  useEffect(() => {
+    if (!map) return;
+    const selectedIds = new Set(imagePins.map((p) => p.id));
+    const markers = allPins
+      .filter((pin) => !selectedIds.has(pin.id))
+      .map((pin) => {
+        const el = document.createElement("div");
+        el.style.cursor = "pointer";
+        el.innerHTML = allPinHtml(pin.id === highlightedAssetId);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onAllPinClick(pin.id);
+        });
+        return new maplibregl.Marker({ element: el })
+          .setLngLat([pin.lng, pin.lat])
+          .addTo(map);
+      });
+    return () => markers.forEach((m) => m.remove());
+  }, [map, allPins, imagePins, highlightedAssetId, onAllPinClick]);
+
+  // Dropped/candidate pin.
+  useEffect(() => {
+    if (!map || !droppedPin) return;
+    const el = document.createElement("div");
+    el.style.cursor = "pointer";
+    el.innerHTML = droppedPinHtml(selectedPin?.type === "dropped");
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onDroppedPinClick();
+    });
+    const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+      .setLngLat([droppedPin.lng, droppedPin.lat])
+      .addTo(map);
+    return () => {
+      marker.remove();
+    };
+  }, [map, droppedPin, selectedPin, onDroppedPinClick]);
+
+  // Fit to the selected photos' pins whenever that set changes.
+  const imagePinsSignature = imagePins
+    .map((p) => `${p.id}:${p.lat.toFixed(5)},${p.lng.toFixed(5)}`)
+    .join("|");
+  useEffect(() => {
+    if (!map || imagePins.length === 0) return;
+    if (imagePins.length === 1) {
+      // Street-ish level for a lone photo — city level (10) was too far out.
+      map.easeTo({
+        center: [imagePins[0].lng, imagePins[0].lat],
+        zoom: Math.max(map.getZoom(), 13),
+      });
+    } else {
+      map.fitBounds(boundsOf(imagePins), { padding: 40, maxZoom: 15 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, imagePinsSignature]);
+
+  // When "show all" turns on, fit the view to everything once.
+  useEffect(() => {
+    if (!map || allPins.length === 0) return;
+    map.fitBounds(boundsOf(allPins), { padding: 40, maxZoom: 15 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, allPins.length > 0]);
+
+  useEffect(() => {
+    if (!map || !flyTo) return;
+    map.easeTo({
+      center: [flyTo.coords.lng, flyTo.coords.lat],
+      zoom: flyTo.zoom ?? Math.max(map.getZoom(), 10),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, flyTo?.ts]);
 
   return (
-    <MapContainer
-      center={[20, 0]}
-      zoom={2}
-      minZoom={2}
-      maxZoom={18}
-      scrollWheelZoom
-      worldCopyJump
-      maxBounds={[[-85, -Infinity], [85, Infinity]]}
-      maxBoundsViscosity={1.0}
-      className="h-full w-full z-0"
-      style={{ minHeight: 300 }}
-    >
-      {isDarkMode ? (
-        <TileLayer
-          key="dark"
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={20}
-        />
-      ) : (
-        <TileLayer
-          key="light"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          maxZoom={20}
-        />
-      )}
-      <MapClickHandler onMapClick={onMapClick} />
-      <FitToPins imagePins={imagePins} />
-      <FitToAllOnce pins={allPins} active={allPins.length > 0} />
-      <FlyToHandler flyTo={flyTo} />
-      {allPins
-        .filter((pin) => !selectedIds.has(pin.id))
-        .map((pin) => (
-          <CircleMarker
-            key={`all-${pin.id}`}
-            center={[pin.lat, pin.lng]}
-            radius={pin.id === highlightedAssetId ? 8 : 4}
-            pathOptions={{
-              color: pin.id === highlightedAssetId ? "#06b6d4" : "#374151",
-              fillColor: UNSELECTED_FILL,
-              fillOpacity: 0.8,
-              weight: pin.id === highlightedAssetId ? 3 : 1,
-            }}
-            eventHandlers={{ click: () => onAllPinClick(pin.id) }}
-          />
-        ))}
-      {imagePins.map((pin) => (
-        <Marker
-          key={pin.id}
-          position={[pin.lat, pin.lng]}
-          icon={imagePinIcon(
-            selectedPin?.type === "image" && selectedPin.id === pin.id,
-            pin.id === highlightedAssetId
-          )}
-          eventHandlers={{ click: () => onImagePinClick(pin.id) }}
-        />
-      ))}
-      {droppedPin && (
-        <Marker
-          position={[droppedPin.lat, droppedPin.lng]}
-          icon={droppedPinIcon(selectedPin?.type === "dropped")}
-          eventHandlers={{ click: onDroppedPinClick }}
-          zIndexOffset={1000}
-        />
-      )}
-    </MapContainer>
+    <div ref={containerRef} className="h-full w-full z-0" style={{ minHeight: 300 }} />
   );
 }

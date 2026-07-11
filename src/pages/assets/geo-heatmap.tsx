@@ -9,8 +9,8 @@ import PeopleDropdown from '@/components/shared/PeopleDropdown';
 import { Button } from '@/components/ui/button';
 import dynamic from 'next/dynamic';
 
-// Dynamically import the LeafletHeatMap component to avoid SSR issues
-const LeafletHeatMap = dynamic(() => import('../../components/LeafletHeatMap'), {
+// Dynamically import the MapLibreHeatMap component to avoid SSR issues
+const MapLibreHeatMap = dynamic(() => import('../../components/MapLibreHeatMap'), {
   ssr: false,
   loading: () => <div className="h-full w-full flex items-center justify-center">Loading map...</div>
 });
@@ -59,9 +59,9 @@ export default function GeoHeatmap() {
         } 
       />
       <div className='h-full w-full'>
-        <LeafletHeatMap 
-          filters={filters} 
-          isDarkMode={theme === 'dark'} 
+        <MapLibreHeatMap
+          filters={filters}
+          isDarkMode={theme === 'dark'}
           onLoadingChange={setIsLoading}
         />
       </div>
