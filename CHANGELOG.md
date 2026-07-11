@@ -7,6 +7,20 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.30.4 — 2026-07-11
+
+Carried yesterday's Rate & Cull bottom-bar redesign into the full-screen
+photo viewer, so both bars now match.
+
+- **Changed:** the full-screen viewer's bottom controls are grouped into
+  the same outlined boxes as the grid's selection bar (rating / pick
+  status / review status / favorite / archive & trash), with the same
+  small keyboard-key hints on each group.
+- **Changed:** Pick/Reject and Favorite used to be single buttons you'd
+  click again to undo — they're now explicit pairs (Pick/Reject/Unflag,
+  Favorite/Unfavorite) that light up to show which one is active,
+  matching the grid's selection bar.
+
 ## v0.30.3 — 2026-07-11
 
 A big Rate & Cull filter/controls redesign, plus an app-wide tune-up
