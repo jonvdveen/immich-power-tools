@@ -152,6 +152,39 @@ context in project memory (`immich-power-tools-cull.md`,
     printed "build exit: 0" even on the failed build; use `docker build
     ... > file.log 2>&1; echo $?` (no pipe) to get the real status.
 
+## Cross-module review (2026-07-11 overnight pass)
+
+- **Done — performance**: `LocationManagerMap` marker effects used to
+  depend on the parent's inline callback props, so *every* parent render
+  (each grid hover included) destroyed and recreated every marker DOM
+  node; callbacks now live in refs, markers reconcile against the pin
+  set, and hover/selection styling rewrites only the elements whose
+  computed HTML changed (verified live: a tagged marker DOM node
+  survives hover transitions, exactly one dot restyles). Rate & Cull's
+  per-thumbnail badge overlay was O(n²) (`assets.find` per photo per
+  render) → memoized Map; selection mapping in `AssetGrid`, cull, and
+  GPS Manager switched from `Array.includes` to Sets.
+- **Done — safety**: the preview lightbox's fork-added Delete button
+  called `deleteAssets` with the handler's `force: true` DEFAULT — a
+  permanent delete contradicting GETTING_STARTED.md's trash-only
+  promise. Now `force: false` with trash wording. NOTE: the handler's
+  default is still `force: true` and upstream pages (missing-locations,
+  bulk-duplicate-finder, potential-albums, albums/[albumId]) still rely
+  on it — left untouched as upstream behavior, but worth revisiting.
+- **Done — mobile**: all four MapLibre surfaces now pair with a
+  `ResizeObserver` → `map.resize()` (`src/hooks/useMapContainerResize.ts`);
+  MapLibre only reacts to window resize, so flex/breakpoint reflows left
+  a desktop-sized canvas bleeding out of phone layouts. Also: dialog map
+  un-hardcoded from 500px width; cull viewer's bottom bar wraps; the
+  keyboard-shortcut header hint is xl-only; lightbox info panel stacks
+  below the photo on <md instead of crushing it beside a fixed 360px
+  panel.
+- **Known inconsistency (deferred)**: two toast systems coexist —
+  face-review/tag-manager/workflows/albums/settings use `react-hot-toast`
+  while cull/GPS Manager/AssetGrid use the shadcn `use-toast`. Upstream
+  itself is split, so unifying only fork modules wouldn't fix it;
+  revisit if toast styling ever bothers anyone.
+
 ## GPS Manager (`/assets/location-manager`; renamed from "Location Manager" 2026-07-11 — URL/file path kept, same precedent as the Rate & Cull rename)
 
 - **LOC-3**: Back/Forward (jump to next/previous missing-GPS photo) only
