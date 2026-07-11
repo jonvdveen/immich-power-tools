@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getAssetGeoHeatmap, IHeatMapParams } from '@/handlers/api/asset.handler';
 import { useImmichMapStyle } from '@/hooks/useImmichMapStyle';
+import { useMapContainerResize } from '@/hooks/useMapContainerResize';
 import { Loader2 } from 'lucide-react';
 
 interface MapLibreHeatMapProps {
@@ -43,6 +44,8 @@ const MapLibreHeatMap: React.FC<MapLibreHeatMapProps> = ({ filters, isDarkMode, 
       setMap(null);
     };
   }, [styleUrl]);
+
+  useMapContainerResize(map);
 
   useEffect(() => {
     if (!map) return;

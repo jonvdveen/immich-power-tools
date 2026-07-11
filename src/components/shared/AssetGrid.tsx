@@ -338,8 +338,10 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
         }}
         render={{
           slideContainer: ({ children }) => (
-            <div className="flex h-full w-full">
-              <div className="flex-1 overflow-hidden flex items-center justify-center">
+            // Stacks on phones (info panel below the photo) instead of
+            // crushing the photo beside a fixed-width side panel.
+            <div className="flex h-full w-full flex-col md:flex-row">
+              <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center">
                 {children}
               </div>
               {showInfoPanel && currentAsset && (

@@ -7,6 +7,7 @@ import { IPlace } from "@/types/common";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useImmichMapStyle } from "@/hooks/useImmichMapStyle";
+import { useMapContainerResize } from "@/hooks/useMapContainerResize";
 import { useTheme } from "next-themes";
 
 interface MapComponentProps {
@@ -43,6 +44,8 @@ export default function Map({ location, onLocationChange }: MapComponentProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [styleUrl]);
+
+  useMapContainerResize(map);
 
   useEffect(() => {
     if (!map) return;
@@ -83,7 +86,8 @@ export default function Map({ location, onLocationChange }: MapComponentProps) {
           onChange={(e) => handleNameChange(e.target.value)}
         />
       </div>
-      <div ref={containerRef} style={{ width: "500px", height: "400px" }} />
+      {/* w-full instead of a fixed 500px, which overflowed the dialog on phones */}
+      <div ref={containerRef} className="w-full h-[400px] max-h-[55vh]" />
     </div>
   );
 }

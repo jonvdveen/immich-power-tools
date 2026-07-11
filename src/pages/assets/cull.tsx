@@ -530,7 +530,9 @@ export default function CullPhotosPage() {
         leftComponent="Rate & Cull"
         rightComponent={
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{shortcutHint}</span>
+            {/* Keyboard-only info — pointless on touch, and it wrapped the
+                mobile header to three lines. */}
+            <span className="hidden xl:inline text-xs text-muted-foreground">{shortcutHint}</span>
             <ShortcutSettings
               open={shortcutsOpen}
               onOpenChange={setShortcutsOpen}
@@ -847,10 +849,11 @@ export default function CullPhotosPage() {
             <ChevronRight size={24} />
           </button>
 
-          {/* bottom overlay: live, clickable rating + flags + actions */}
-          <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-center gap-4 bg-gradient-to-t from-black/80 to-transparent px-4 py-3">
+          {/* bottom overlay: live, clickable rating + flags + actions.
+              flex-wrap so nothing clips off-screen on phones. */}
+          <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-2 sm:gap-4 bg-gradient-to-t from-black/80 to-transparent px-4 py-3">
             <StarRow value={viewerAsset.rating} size={22} onRate={(n) => rateAssets([viewerAsset.id], n)} />
-            <span className="h-6 w-px bg-white/20" />
+            <span className="hidden sm:block h-6 w-px bg-white/20" />
             <button
               title={`Pick (${displayKey(shortcuts.pick)}) — press again to unflag`}
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.picked ? "bg-emerald-600 text-white" : "text-white/60 hover:bg-white/10"}`}
@@ -872,7 +875,7 @@ export default function CullPhotosPage() {
             >
               <Glasses size={15} /> Reviewed
             </button>
-            <span className="h-6 w-px bg-white/20" />
+            <span className="hidden sm:block h-6 w-px bg-white/20" />
             <button
               title={`Favorite (${displayKey(shortcuts.favorite)}) — press again to unfavorite`}
               className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.isFavorite ? "text-pink-500" : "text-white/60 hover:bg-white/10"}`}
@@ -880,7 +883,7 @@ export default function CullPhotosPage() {
             >
               <Heart size={15} className={viewerAsset.isFavorite ? "fill-pink-500" : ""} /> Favorite
             </button>
-            <span className="h-6 w-px bg-white/20" />
+            <span className="hidden sm:block h-6 w-px bg-white/20" />
             <button
               title="Archive — hide from timeline (reversible in Immich)"
               className="flex items-center gap-1 rounded px-2 py-1 text-sm text-white/60 hover:bg-white/10 disabled:opacity-40"

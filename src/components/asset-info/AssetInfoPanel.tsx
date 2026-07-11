@@ -201,8 +201,12 @@ function MiniMap({ latitude, longitude }: { latitude: number; longitude: number 
       new maplibregl.Marker().setLngLat([longitude, latitude]).addTo(map)
       map.resize()
     })
+    // Panel/viewport reflows resize this container with no window event.
+    const observer = new ResizeObserver(() => map.resize())
+    observer.observe(mapContainerRef.current)
 
     return () => {
+      observer.disconnect()
       map.remove()
     }
   }, [latitude, longitude, styleUrl])
@@ -236,7 +240,7 @@ export default function AssetInfoPanel({ assetId }: AssetInfoPanelProps) {
 
   if (loading) {
     return (
-      <div className="dark w-[360px] min-w-[360px] bg-background text-foreground border-l overflow-y-auto p-4">
+      <div className="dark w-full max-h-[45vh] md:max-h-none md:w-[360px] md:min-w-[360px] bg-background text-foreground border-t md:border-t-0 md:border-l overflow-y-auto p-4">
         <h2 className="text-lg font-semibold mb-4">Info</h2>
         <div className="animate-pulse space-y-4">
           <div className="h-4 bg-muted rounded w-3/4" />
@@ -249,7 +253,7 @@ export default function AssetInfoPanel({ assetId }: AssetInfoPanelProps) {
 
   if (!detail) {
     return (
-      <div className="dark w-[360px] min-w-[360px] bg-background text-foreground border-l overflow-y-auto p-4">
+      <div className="dark w-full max-h-[45vh] md:max-h-none md:w-[360px] md:min-w-[360px] bg-background text-foreground border-t md:border-t-0 md:border-l overflow-y-auto p-4">
         <h2 className="text-lg font-semibold mb-4">Info</h2>
         <p className="text-sm text-muted-foreground">Unable to load asset details.</p>
       </div>
@@ -270,7 +274,7 @@ export default function AssetInfoPanel({ assetId }: AssetInfoPanelProps) {
     : null
 
   return (
-    <div className="dark w-[360px] min-w-[360px] bg-background text-foreground border-l overflow-y-auto">
+    <div className="dark w-full max-h-[45vh] md:max-h-none md:w-[360px] md:min-w-[360px] bg-background text-foreground border-t md:border-t-0 md:border-l overflow-y-auto">
       {/* Header */}
       <div className="p-4 pb-2">
         <h2 className="text-lg font-semibold">Info</h2>

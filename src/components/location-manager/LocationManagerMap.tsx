@@ -5,6 +5,7 @@ import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { ILatLng } from "@/lib/location-manager/coordinates";
 import { useImmichMapStyle } from "@/hooks/useImmichMapStyle";
+import { useMapContainerResize } from "@/hooks/useMapContainerResize";
 
 export interface IImagePin {
   id: string;
@@ -134,6 +135,8 @@ export default function LocationManagerMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [styleUrl]);
+
+  useMapContainerResize(map);
 
   // Map click → drop/select a candidate pin. Clicking a marker's own DOM
   // element never reaches this (markers are separate overlay nodes, not
@@ -308,6 +311,8 @@ export default function LocationManagerMap({
   }, [map, flyTo?.ts]);
 
   return (
-    <div ref={containerRef} className="h-full w-full z-0" style={{ minHeight: 300 }} />
+    // minHeight is only a collapse guard — on short mobile panels the old
+    // 300px forced the map taller than its flex parent and it bled out.
+    <div ref={containerRef} className="h-full w-full z-0" style={{ minHeight: 160 }} />
   );
 }
