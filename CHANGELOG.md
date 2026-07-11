@@ -7,6 +7,34 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.30.1 — 2026-07-11
+
+Follow-up polish for Location Manager based on real use.
+
+- **New:** three explicit favourite buttons — "Apply favourite" (a
+  dropdown of your saved spots), "Add favourite" (saves wherever the
+  selected pin is), and "Manage favourites" (rename, delete, reorder).
+- **Changed:** the sidebar is now split into two clearly separated
+  areas — search and action buttons up top, the map and its coordinate
+  fields below.
+- **Renamed & moved:** "Copy Image Location" is now "Copy Image GPS,"
+  and there's a new matching "Copy Map GPS" button — both sit together
+  at the top of the sidebar along with "Paste Location." Each one turns
+  green (or blue for Paste) when it's actually usable, so you can tell
+  at a glance.
+- **Renamed:** the "Save" button next to Image Coordinates is now
+  "Update," and it now asks you to confirm before writing the new
+  location to your selected photos.
+- **Fixed:** the "Clear filters" button used to appear and disappear,
+  which made the page jump around — it now stays put and just greys out
+  when there's nothing to clear.
+- **Fixed:** picking an album left no way back to your whole library —
+  there's now an "All albums" option.
+- **Changed:** the floating bar that used to cover part of your photos
+  is gone, replaced by a plain bar docked above the grid.
+- **Hidden:** "Missing Locations" no longer shows in the menu — Location
+  Manager replaces it.
+
 ## v0.30.0 — 2026-07-10
 
 The version jumps from 0.24 to 0.30 because this release adds a whole new
