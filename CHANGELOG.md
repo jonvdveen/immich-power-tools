@@ -7,6 +7,31 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.30.2 — 2026-07-10
+
+Maps got a permanent fix, and a couple of small tidy-ups.
+
+- **Fixed for good:** all maps in the app (GPS Manager, Geo Heatmap, the
+  mini-map on a photo's info panel, and the location-tagging popup) now
+  use the exact same map engine and map data as the main Immich app
+  itself. This replaces the earlier raster map experiments — no more
+  choosing between readable English labels and accurate, up-to-date
+  streets/buildings; you get both, for free, with no API key.
+- **Changed:** on the GPS Manager map, the selected pin/dot is grey with
+  just an orange outline (no more blue fill), so it stays visually
+  consistent with everything else and only the outline marks it as
+  selected.
+- **Changed:** "Copy Image GPS" and "Paste GPS" moved into the bar right
+  above the photo grid, next to each other, instead of being split
+  across the sidebar.
+- **Changed:** using Copy or Paste GPS now automatically clears your
+  photo selection afterward, since both are one-click actions on
+  whatever was selected at the time.
+- **Renamed:** "Location Manager" is now called "GPS Manager" everywhere
+  in the app (same page, same URL — just a clearer name).
+- **Changed:** "Potential Albums" moved down in the sidebar to sit below
+  "Orphan Finder".
+
 ## v0.30.1 — 2026-07-11
 
 Follow-up polish for Location Manager based on real use.
