@@ -173,7 +173,7 @@ export default function TaggedFacesView({
         {selectMode ? (
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={selection.selectAll}>Select all</Button>
-            <Button size="sm" variant="outline" onClick={selection.clear}>Select none</Button>
+            <Button size="sm" variant="outline" onClick={selection.clear}>Deselect all</Button>
           </div>
         ) : (
           <>

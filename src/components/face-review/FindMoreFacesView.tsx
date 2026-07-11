@@ -107,7 +107,7 @@ export default function FindMoreFacesView({
         <ReviewTabs {...nav} />
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={selection.selectAll} disabled={!cards.length}>Select all</Button>
-          <Button size="sm" variant="outline" onClick={selection.clear} disabled={!selection.selected.size}>Select none</Button>
+          <Button size="sm" variant="outline" onClick={selection.clear} disabled={!selection.selected.size}>Deselect all</Button>
         </div>
       </div>
 

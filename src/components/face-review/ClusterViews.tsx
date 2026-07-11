@@ -95,7 +95,7 @@ function ClusterDetail({
         <ReviewTabs tab={nav.tab} sub={nav.sub} scope={nav.scope} setParams={nav.setParams} showInclude={false} />
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={selection.selectAll}>Select all</Button>
-          <Button size="sm" variant="outline" onClick={selection.clear}>Select none</Button>
+          <Button size="sm" variant="outline" onClick={selection.clear}>Deselect all</Button>
         </div>
       </div>
       <BulkBar

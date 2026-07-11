@@ -52,7 +52,7 @@ import {
   ClipboardCopy,
   ClipboardPaste,
   Expand,
-  Hourglass,
+  Loader2,
   Plus,
   SortAsc,
   SortDesc,
@@ -845,9 +845,8 @@ export default function LocationManager() {
             )}
             <div className="flex-1 overflow-y-auto">
               {loading ? (
-                <div className="flex flex-col gap-2 h-full justify-center items-center w-full">
-                  <Hourglass />
-                  <p className="text-lg">Loading...</p>
+                <div className="flex h-full w-full items-center justify-center">
+                  <Loader2 className="animate-spin text-muted-foreground" />
                 </div>
               ) : assets.length === 0 ? (
                 <div className="flex flex-col gap-2 h-full justify-center items-center w-full">

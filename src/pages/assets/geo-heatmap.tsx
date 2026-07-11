@@ -48,10 +48,12 @@ export default function GeoHeatmap() {
                 })
               }} 
             />
-            <Button 
-              variant="default" 
-              size="sm" 
-              disabled={Object.keys(filters).length === 0 || isLoading}
+            <Button
+              variant="default"
+              size="sm"
+              // Check values, not key presence — deselecting a dropdown leaves
+              // its key behind as undefined, which kept Clear lit with no filter.
+              disabled={(!filters.albumIds && !filters.peopleIds) || isLoading}
               onClick={() => setFilters({})}>
               <X size={16} /> Clear
             </Button>
