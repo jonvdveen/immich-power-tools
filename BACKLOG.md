@@ -105,6 +105,24 @@ context in project memory (`immich-power-tools-cull.md`,
 
 ## Location Manager (`/assets/location-manager`)
 
+- **LOC-3**: Back/Forward (jump to next/previous missing-GPS photo) only
+  searches currently-loaded photos (500/page) — can't reach missing-GPS
+  photos on unloaded pages. User asked about this 2026-07-11; proposed
+  fix is a server endpoint that finds the true next/previous missing-GPS
+  asset in the DB (respecting album/date filters) and jumps the grid to
+  the page containing it. Not yet built — user hasn't said go.
+- Reverted the Esri map-tile experiment (2026-07-11): user reported real
+  accuracy problems (a workplace shown on top of a lake, houses on their
+  own street missing) — Esri's World_Street_Map/Dark_Gray_Canvas blend
+  several vendors on their own update cadence and can lag OSM by years in
+  under-mapped areas. Back on OSM standard (light) / CARTO dark_all
+  (dark) — original data freshness (OSM edits propagate in days) at the
+  cost of local-script-only labels in non-Latin regions again. Options
+  laid out for the user (OSM/CARTO vs Esri vs MapTiler/Mapbox with a free
+  API key vs a zoom-dependent hybrid) — user chose "revert," didn't ask
+  for the hybrid or paid-key routes; worth revisiting if the label
+  complaint resurfaces. Pin-color work (grey + orange outline) and all
+  other LocationManagerMap.tsx logic untouched by this revert.
 - Second post-v0.30.1 pass (2026-07-11, unreleased): selected-pin color
   simplified — both selected and unselected pins/dots stay dark grey now,
   only an orange border marks the selected one (dropped the blue fill

@@ -165,29 +165,19 @@ export default function LocationManagerMap({
       style={{ minHeight: 300 }}
     >
       {isDarkMode ? (
-        <>
-          {/* Esri's Dark Gray Canvas base + its separate labels ("reference")
-              layer — unlike plain OSM/CARTO tiles, Esri's label data carries
-              an English name alongside the local script (verified: Tokyo
-              street tiles read "Dogenzaka" next to the kanji, not kanji-only),
-              so foreign-script regions stay legible. */}
-          <TileLayer
-            key="dark-base"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-            attribution="Tiles &copy; Esri — Esri, DeLorme, NAVTEQ"
-            maxNativeZoom={16}
-          />
-          <TileLayer
-            key="dark-labels"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
-            maxNativeZoom={16}
-          />
-        </>
+        <TileLayer
+          key="dark"
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          subdomains="abcd"
+          maxZoom={20}
+        />
       ) : (
         <TileLayer
           key="light"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
-          attribution="Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          maxZoom={20}
         />
       )}
       <MapClickHandler onMapClick={onMapClick} />
