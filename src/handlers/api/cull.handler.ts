@@ -63,17 +63,18 @@ export interface ICullAsset extends IAsset {
   isFavorite: boolean;
 }
 
-export type ICullRatingFilter = "any" | "unrated" | "1" | "2" | "3" | "4" | "5";
-export type ICullFlagFilter = "any" | "picked" | "rejected" | "unflagged";
-export type ICullReviewedFilter = "any" | "reviewed" | "unreviewed";
+export type ICullRatingComparator = "lt" | "gt" | "eq";
+export type ICullPickStatus = "picked" | "rejected" | "unflagged";
+export type ICullReviewStatus = "reviewed" | "unreviewed";
 
 export interface ICullAssetsParams {
   albumId?: string;
   startDate?: string; // yyyy-MM-dd, camera-local
   endDate?: string;
-  rating?: ICullRatingFilter; // numbers mean ">= N stars", Lightroom-style
-  flag?: ICullFlagFilter;
-  reviewed?: ICullReviewedFilter;
+  ratingValue?: number | null; // 1-5 stars; null/omitted = no star selected
+  ratingComparator?: ICullRatingComparator; // how ratingValue is applied; "eq" + no value = Unrated
+  flag?: ICullPickStatus[]; // multi-select; empty/omitted = any
+  reviewed?: ICullReviewStatus[]; // multi-select; empty or both = any
   sortOrder?: "asc" | "desc";
   page?: number;
   limit?: number;
@@ -82,7 +83,12 @@ export interface ICullAssetsParams {
 export const listCullAssets = (
   params: ICullAssetsParams
 ): Promise<{ assets: ICullAsset[]; total: number; hasNext: boolean }> =>
-  API.get(LIST_CULL_ASSETS_PATH, params);
+  API.get(LIST_CULL_ASSETS_PATH, {
+    ...params,
+    ratingValue: params.ratingValue ?? undefined,
+    flag: params.flag?.length ? params.flag.join(",") : undefined,
+    reviewed: params.reviewed?.length ? params.reviewed.join(",") : undefined,
+  });
 
 /** Slim EXIF summary for the viewer's info panel — reuses the same endpoint AssetInfoPanel uses. */
 export interface ICullExif {

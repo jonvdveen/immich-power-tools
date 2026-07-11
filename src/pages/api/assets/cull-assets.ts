@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from "next";
-import { and, asc, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/config/db";
 import { getCurrentUser } from "@/handlers/serverUtils/user.utils";
@@ -14,11 +14,12 @@ import { CULL_TAG_NAMESPACE, PICK_TAG_NAME, REJECT_TAG_NAME, REVIEWED_TAG_NAME }
  * (albumId), or capture-date range (startDate/endDate, on the camera-local
  * localDateTime like the album/potential-albums routes).
  *
- * Filters: minimum star rating or "unrated" (exif.rating — Immich's native
- * field; 0 is treated as unrated, it's invalid as a rating since v3), flag
- * state (Picked/Rejected tags — see cull.handler.ts for why flags are tags
- * and not the rating's -1 value), and reviewed state (a third, independent
- * tag — not tied to pick/reject).
+ * Filters: star rating (exif.rating — Immich's native field; 0 is treated as
+ * unrated, it's invalid as a rating since v3) via a value + comparator
+ * (</>/=; no value + "=" means Unrated), pick status (Picked/Rejected tags —
+ * see cull.handler.ts for why flags are tags and not the rating's -1 value,
+ * multi-select), and reviewed state (a third, independent tag — not tied to
+ * pick/reject, also multi-select).
  *
  * Server-side pagination is the point: the previous client fetched EVERY
  * page of an album before showing photo #1, which is exactly the slow-large-
@@ -34,9 +35,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     albumId,
     startDate,
     endDate,
-    rating = "any", // "any" | "unrated" | "1".."5" (meaning >= N)
-    flag = "any", // "any" | "picked" | "rejected" | "unflagged"
-    reviewed = "any", // "any" | "reviewed" | "unreviewed"
+    ratingValue,
+    ratingComparator = "gt", // "lt" | "gt" | "eq" — how ratingValue is applied; "eq" with no value means Unrated
+    flag = "", // comma-separated ICullPickStatus[]; empty = any
+    reviewed = "", // comma-separated ICullReviewStatus[]; empty or both = any
     sortOrder = "desc",
     page = "1",
     limit = "200",
@@ -84,21 +86,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     conditions.push(lt(assets.localDateTime, endExclusive));
   }
 
-  if (rating === "unrated") {
-    conditions.push(sql`(${exif.rating} IS NULL OR ${exif.rating} <= 0)`);
-  } else if (/^[1-5]$/.test(rating)) {
-    conditions.push(gte(exif.rating, parseInt(rating, 10)));
+  const ratingValueNum = ratingValue ? parseInt(ratingValue, 10) : null;
+  if (ratingValueNum === null) {
+    // No star selected: "=" reads as Unrated, "<"/">" mean no constraint (any).
+    if (ratingComparator === "eq") conditions.push(sql`(${exif.rating} IS NULL OR ${exif.rating} <= 0)`);
+  } else if (ratingValueNum >= 1 && ratingValueNum <= 5) {
+    if (ratingComparator === "eq") conditions.push(eq(exif.rating, ratingValueNum));
+    else if (ratingComparator === "lt") conditions.push(lt(exif.rating, ratingValueNum));
+    else conditions.push(gt(exif.rating, ratingValueNum));
   }
 
-  if (flag === "picked") conditions.push(pickTagId ? pickedExpr : sql`false`);
-  else if (flag === "rejected") conditions.push(rejectTagId ? rejectedExpr : sql`false`);
-  else if (flag === "unflagged") {
-    if (pickTagId) conditions.push(sql`NOT ${pickedExpr}`);
-    if (rejectTagId) conditions.push(sql`NOT ${rejectedExpr}`);
+  const flagValues = flag.split(",").filter(Boolean);
+  if (flagValues.length && flagValues.length < 3) {
+    conditions.push(
+      or(
+        ...flagValues.map((f) =>
+          f === "picked" ? pickedExpr : f === "rejected" ? rejectedExpr : sql`(NOT ${pickedExpr} AND NOT ${rejectedExpr})`
+        )
+      )!
+    );
   }
 
-  if (reviewed === "reviewed") conditions.push(reviewedTagId ? reviewedExpr : sql`false`);
-  else if (reviewed === "unreviewed" && reviewedTagId) conditions.push(sql`NOT ${reviewedExpr}`);
+  const reviewedValues = reviewed.split(",").filter(Boolean);
+  if (reviewedValues.length === 1) {
+    conditions.push(reviewedValues[0] === "reviewed" ? reviewedExpr : sql`NOT ${reviewedExpr}`);
+  }
 
   const rows = await db
     .select({

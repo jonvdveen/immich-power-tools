@@ -2,8 +2,8 @@ import "react-photo-album/rows.css";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Archive, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Flag, Glasses, Heart, Info,
-  Loader2, Star, StarOff, Trash2, X, XCircle,
+  Archive, CheckCircle2, ChevronLeft, ChevronRight, Circle, ExternalLink, Glasses, Heart, Info,
+  Loader2, SortAsc, SortDesc, Star, StarOff, Trash2, X, XCircle,
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
@@ -27,8 +27,8 @@ import { useConfig } from "@/contexts/ConfigContext";
 import { listAlbums } from "@/handlers/api/album.handler";
 import { deleteAssets, updateAssets } from "@/handlers/api/asset.handler";
 import {
-  addTagToAssets, ensureCullTags, ICullAsset, ICullFlagFilter, ICullRatingFilter,
-  ICullReviewedFilter, listCullAssets, removeTagFromAssets,
+  addTagToAssets, ensureCullTags, ICullAsset, ICullPickStatus, ICullRatingComparator,
+  ICullReviewStatus, listCullAssets, removeTagFromAssets,
 } from "@/handlers/api/cull.handler";
 import { ASSET_PREVIEW_PATH, ASSET_THUMBNAIL_PATH, ASSET_VIDEO_PATH } from "@/config/routes";
 import {
@@ -88,11 +88,12 @@ export default function CullPhotosPage() {
   const [albumId, setAlbumId] = useState("");
   const [startDate, setStartDate] = useState(fmtLocalDate(daysAgo(6)));
   const [endDate, setEndDate] = useState(fmtLocalDate(new Date()));
-  const [ratingFilter, setRatingFilter] = useState<ICullRatingFilter>("any");
-  const [flagFilter, setFlagFilter] = useState<ICullFlagFilter>("any");
+  const [ratingValue, setRatingValue] = useState<number | null>(null);
+  const [ratingComparator, setRatingComparator] = useState<ICullRatingComparator>("gt");
+  const [pickStatusFilter, setPickStatusFilter] = useState<Set<ICullPickStatus>>(new Set());
   // Defaults to "unreviewed" (unlike the other filters) so the queue always
   // opens on wherever you left off reviewing.
-  const [reviewedFilter, setReviewedFilter] = useState<ICullReviewedFilter>("unreviewed");
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<Set<ICullReviewStatus>>(new Set(["unreviewed"]));
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const { exImmichUrl } = useConfig();
 
@@ -151,9 +152,10 @@ export default function CullPhotosPage() {
       try {
         const res = await listCullAssets({
           ...sourceParams,
-          rating: ratingFilter,
-          flag: flagFilter,
-          reviewed: reviewedFilter,
+          ratingValue,
+          ratingComparator,
+          flag: Array.from(pickStatusFilter),
+          reviewed: Array.from(reviewStatusFilter),
           sortOrder,
           page,
           limit: PAGE_SIZE,
@@ -168,7 +170,7 @@ export default function CullPhotosPage() {
         reset ? setLoading(false) : setLoadingMore(false);
       }
     },
-    [sourceParams, ratingFilter, flagFilter, reviewedFilter, sortOrder]
+    [sourceParams, ratingValue, ratingComparator, pickStatusFilter, reviewStatusFilter, sortOrder]
   );
 
   // Any source/filter change restarts from page 1 (server does the filtering).
@@ -444,7 +446,9 @@ export default function CullPhotosPage() {
   const selectionActive = selectedIds.length > 0;
 
   // --- shared overlay pieces ---
-  const StarRow = ({ value, size, onRate }: { value: number | null; size: number; onRate: (n: number | null) => void }) => (
+  const StarRow = ({
+    value, size, onRate, mutedClassName = "text-white/40",
+  }: { value: number | null; size: number; onRate: (n: number | null) => void; mutedClassName?: string }) => (
     <span className="flex items-center">
       {[1, 2, 3, 4, 5].map((n) => (
         <button
@@ -453,11 +457,31 @@ export default function CullPhotosPage() {
           className="p-1 hover:scale-125 transition-transform"
           onClick={(e) => { e.stopPropagation(); onRate(value === n ? null : n); }}
         >
-          <Star size={size} className={value !== null && n <= value ? "fill-amber-400 text-amber-400" : "text-white/40"} />
+          <Star size={size} className={value !== null && n <= value ? "fill-amber-400 text-amber-400" : mutedClassName} />
         </button>
       ))}
     </span>
   );
+
+  // --- top filter bar: pick/review status are multi-select toggle sets;
+  // rating is a single star count plus a comparator that decides how it's
+  // applied (0 stars + "=" reads as Unrated, since there's no "0" star to click).
+  const togglePickStatus = (v: ICullPickStatus) =>
+    setPickStatusFilter((prev) => {
+      const next = new Set(prev);
+      next.has(v) ? next.delete(v) : next.add(v);
+      return next;
+    });
+
+  const toggleReviewStatus = (v: ICullReviewStatus) =>
+    setReviewStatusFilter((prev) => {
+      const next = new Set(prev);
+      next.has(v) ? next.delete(v) : next.add(v);
+      return next;
+    });
+
+  const cycleRatingComparator = () =>
+    setRatingComparator((prev) => (prev === "gt" ? "eq" : prev === "eq" ? "lt" : "gt"));
 
   const shortcutHint =
     `1–5 rate · ${displayKey(shortcuts.pick)} pick · ${displayKey(shortcuts.reject)} reject · ` +
@@ -519,48 +543,78 @@ export default function CullPhotosPage() {
               ))}
             </>
           )}
-          <label className="text-sm text-muted-foreground">Rating</label>
-          <Select value={ratingFilter} onValueChange={(v) => setRatingFilter(v as ICullRatingFilter)}>
-            <SelectTrigger className="w-36 h-8"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">Any</SelectItem>
-              <SelectItem value="unrated">Unrated</SelectItem>
-              {[1, 2, 3, 4].map((n) => (
-                <SelectItem key={n} value={String(n)}>{"★".repeat(n)} & up</SelectItem>
-              ))}
-              <SelectItem value="5">★★★★★</SelectItem>
-            </SelectContent>
-          </Select>
-          <label className="text-sm text-muted-foreground">Flag</label>
-          <Select value={flagFilter} onValueChange={(v) => setFlagFilter(v as ICullFlagFilter)}>
-            <SelectTrigger className="w-36 h-8"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">Any</SelectItem>
-              <SelectItem value="picked">Picked</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-              <SelectItem value="unflagged">Unflagged</SelectItem>
-            </SelectContent>
-          </Select>
-          <label className="text-sm text-muted-foreground">Reviewed</label>
-          <Select value={reviewedFilter} onValueChange={(v) => setReviewedFilter(v as ICullReviewedFilter)}>
-            <SelectTrigger className="w-36 h-8"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">Any</SelectItem>
-              <SelectItem value="unreviewed">Unreviewed</SelectItem>
-              <SelectItem value="reviewed">Reviewed</SelectItem>
-            </SelectContent>
-          </Select>
-          <label className="text-sm text-muted-foreground">Sort</label>
-          <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "asc" | "desc")}>
-            <SelectTrigger className="w-28 h-8"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="desc">Newest</SelectItem>
-              <SelectItem value="asc">Oldest</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="ml-auto text-sm text-muted-foreground">
-            {loading ? "Loading…" : `${assets.length.toLocaleString()} of ${total.toLocaleString()} loaded`}
-          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* Pick status — multi-select */}
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+              <button
+                type="button"
+                title="Picked"
+                className={`rounded p-1.5 ${pickStatusFilter.has("picked") ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-accent"}`}
+                onClick={() => togglePickStatus("picked")}
+              >
+                <CheckCircle2 size={15} />
+              </button>
+              <button
+                type="button"
+                title="Rejected"
+                className={`rounded p-1.5 ${pickStatusFilter.has("rejected") ? "bg-red-600 text-white" : "text-muted-foreground hover:bg-accent"}`}
+                onClick={() => togglePickStatus("rejected")}
+              >
+                <XCircle size={15} />
+              </button>
+              <button
+                type="button"
+                title="Unflagged"
+                className={`rounded p-1.5 ${pickStatusFilter.has("unflagged") ? "bg-slate-600 text-white" : "text-muted-foreground hover:bg-accent"}`}
+                onClick={() => togglePickStatus("unflagged")}
+              >
+                <Circle size={15} />
+              </button>
+            </div>
+
+            {/* Star rating — comparator cycles </>/=; 0 stars + "=" means Unrated */}
+            <div className="flex items-center gap-1 rounded-md border p-0.5 pl-2">
+              <button
+                type="button"
+                title={`Rating is ${ratingComparator === "eq" ? "exactly" : ratingComparator === "gt" ? "more than" : "less than"} the stars below (click to cycle)`}
+                className="w-4 text-sm font-semibold text-muted-foreground hover:text-foreground"
+                onClick={cycleRatingComparator}
+              >
+                {ratingComparator === "eq" ? "=" : ratingComparator === "gt" ? ">" : "<"}
+              </button>
+              <StarRow value={ratingValue} size={16} onRate={setRatingValue} mutedClassName="text-muted-foreground/40" />
+            </div>
+
+            {/* Review status — multi-select */}
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+              <button
+                type="button"
+                title="Reviewed"
+                className={`rounded p-1.5 ${reviewStatusFilter.has("reviewed") ? "bg-sky-600 text-white" : "text-muted-foreground hover:bg-accent"}`}
+                onClick={() => toggleReviewStatus("reviewed")}
+              >
+                <Glasses size={15} />
+              </button>
+              <button
+                type="button"
+                title="Unreviewed"
+                className={`rounded p-1.5 ${reviewStatusFilter.has("unreviewed") ? "bg-slate-600 text-white" : "text-muted-foreground hover:bg-accent"}`}
+                onClick={() => toggleReviewStatus("unreviewed")}
+              >
+                <Glasses size={15} />
+              </button>
+            </div>
+
+            {/* Sort direction */}
+            <Button
+              variant="default"
+              size="sm"
+              title={sortOrder === "asc" ? "Oldest first" : "Newest first"}
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            >
+              {sortOrder === "asc" ? <SortAsc size={16} /> : <SortDesc size={16} />}
+            </Button>
+          </div>
         </div>
 
         {/* grid */}
@@ -641,7 +695,7 @@ export default function CullPhotosPage() {
             <XCircle size={15} className="text-red-500" />
           </Button>
           <Button size="sm" variant="ghost" title={`Unflag (${displayKey(shortcuts.unflag)})`} onClick={() => flagAssets(selectedIds, null)}>
-            <Flag size={15} className="text-muted-foreground" />
+            <Circle size={15} className="text-muted-foreground" />
           </Button>
           <Button size="sm" variant="ghost" title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`} onClick={() => reviewAssets(selectedIds, true)}>
             <Glasses size={15} className="text-sky-500" />
