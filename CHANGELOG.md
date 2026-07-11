@@ -7,6 +7,56 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.30.3 — 2026-07-11
+
+A big Rate & Cull filter/controls redesign, plus an app-wide tune-up
+(speed, phone layouts, and one important safety fix) from a full review
+of every added module.
+
+### Rate & Cull
+
+- **New:** the filters at the top right are now visual controls under a
+  "Filters" label — pick-status icons (you can select more than one),
+  actual clickable stars for the rating filter with a `<` / `>` / `=`
+  button that changes how the stars are applied (no stars + `=` means
+  "unrated"), review-status icons (also multi-select), and the same
+  sort-direction toggle button used elsewhere in the app.
+- **New:** "Select all" and "Deselect all" buttons sit next to the
+  review-scope dropdown, and Cmd/Ctrl+A selects every loaded photo.
+- **Changed:** the bottom action bar is redesigned — centered over the
+  photo grid, controls grouped into the same outlined boxes as the top
+  filters, labeled "Rating controls," with each group showing its
+  keyboard key (1–5, P/X/U, R, F — these follow your remapped
+  shortcuts). The long shortcut-hint line in the header is gone.
+- **Changed:** the stars in the bottom bar now show the rating your
+  selected photos share, and clicking the lit star clears the rating —
+  the separate clear-rating button is gone.
+- **Changed:** clearer icons — "Unflag" is now an empty circle (matching
+  the picked check and rejected X), and "Unreviewed" is glasses with a
+  slash through them so it no longer looks identical to "Reviewed."
+- **Fixed:** the bottom bar's stars were invisible in the light theme.
+
+### Everywhere else
+
+- **Fixed (important):** the trash button in the photo preview really
+  did delete permanently, even though this app promises deletions only
+  ever go to Immich's recoverable trash. It now uses the trash, and the
+  confirmation says so.
+- **Fixed:** on phones, maps could render at desktop size and bleed out
+  of the layout — every map in the app now resizes with its container.
+  Also on phones: the Rate & Cull full-screen viewer no longer cuts off
+  its bottom buttons, the photo-info panel stacks below the photo
+  instead of squeezing it, and the location-tagging popup's map fits the
+  screen.
+- **Faster:** the GPS Manager map no longer rebuilds every pin whenever
+  you hover a photo — hovering and selecting stay smooth even with
+  hundreds of pins on screen. Several photo grids also got
+  behind-the-scenes speedups for large selections.
+- **Fixed:** small consistency touches — Face Review says "Deselect all"
+  like everywhere else, GPS Manager uses the standard loading spinner,
+  and Geo Heatmap's "Clear" button greys out properly when there's
+  nothing to clear.
+
 ## v0.30.2 — 2026-07-10
 
 Maps got a permanent fix, and a couple of small tidy-ups.
