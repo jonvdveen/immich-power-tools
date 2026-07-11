@@ -28,7 +28,6 @@ export const sidebarGroups: SidebarGroup[] = [
       { title: "Face Review", link: "/face-review", icon: <ScanFace className="h-4 w-4" />, badge: "Beta" },
       { title: "Rate & Cull", link: "/assets/cull", icon: <Star className="h-4 w-4" />, badge: "Beta" },
       { title: "Tag Manager", link: "/tags", icon: <Tags className="h-4 w-4" />, badge: "Beta" },
-      { title: "Potential Albums", link: "/albums/potential-albums", icon: <GalleryVerticalEnd className="h-4 w-4" /> },
       { title: "GPS Manager", link: "/assets/location-manager", icon: <MapPin className="h-4 w-4" />, badge: "Beta" },
       // Missing Locations is hidden (superseded by GPS Manager) — the
       // page still exists at /assets/missing-locations for old bookmarks,
@@ -37,6 +36,7 @@ export const sidebarGroups: SidebarGroup[] = [
       { title: "Empty Videos", link: "/assets/empty-videos", icon: <Video className="h-4 w-4" /> },
       { title: "Bulk Duplicate Finder", link: "/assets/bulk-duplicate-finder", icon: <Copy className="h-4 w-4" /> },
       { title: "Orphan Finder", link: "/assets/orphan-finder", icon: <PackageSearch className="h-4 w-4" /> },
+      { title: "Potential Albums", link: "/albums/potential-albums", icon: <GalleryVerticalEnd className="h-4 w-4" /> },
     ],
   },
   {
