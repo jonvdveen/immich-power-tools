@@ -892,63 +892,100 @@ export default function CullPhotosPage() {
             <ChevronRight size={24} />
           </button>
 
-          {/* bottom overlay: live, clickable rating + flags + actions.
+          {/* bottom overlay: same bordered-cluster + key-hint layout as the
+              grid's bulk-action bar, just targeting this one photo.
               flex-wrap so nothing clips off-screen on phones. */}
-          <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-2 sm:gap-4 bg-gradient-to-t from-black/80 to-transparent px-4 py-3">
-            <StarRow value={viewerAsset.rating} size={22} onRate={(n) => rateAssets([viewerAsset.id], n)} />
-            <span className="hidden sm:block h-6 w-px bg-white/20" />
-            <button
-              title={`Pick (${displayKey(shortcuts.pick)}) — press again to unflag`}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.picked ? "bg-emerald-600 text-white" : "text-white/60 hover:bg-white/10"}`}
-              onClick={() => flagAssets([viewerAsset.id], viewerAsset.picked ? null : "pick")}
-            >
-              <CheckCircle2 size={15} /> Pick
-            </button>
-            <button
-              title={`Reject (${displayKey(shortcuts.reject)}) — press again to unflag`}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.rejected ? "bg-red-600 text-white" : "text-white/60 hover:bg-white/10"}`}
-              onClick={() => flagAssets([viewerAsset.id], viewerAsset.rejected ? null : "reject")}
-            >
-              <XCircle size={15} /> Reject
-            </button>
-            <button
-              title={`Reviewed (${displayKey(shortcuts.reviewed)}) — press again to unmark`}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.reviewed ? "bg-sky-600 text-white" : "text-white/60 hover:bg-white/10"}`}
-              onClick={() => reviewAssets([viewerAsset.id], !viewerAsset.reviewed)}
-            >
-              <Glasses size={15} /> Reviewed
-            </button>
-            <span className="hidden sm:block h-6 w-px bg-white/20" />
-            <button
-              title={`Favorite (${displayKey(shortcuts.favorite)}) — press again to unfavorite`}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-sm ${viewerAsset.isFavorite ? "text-pink-500" : "text-white/60 hover:bg-white/10"}`}
-              onClick={() => favoriteAssets([viewerAsset.id], !viewerAsset.isFavorite)}
-            >
-              <Heart size={15} className={viewerAsset.isFavorite ? "fill-pink-500" : ""} /> Favorite
-            </button>
-            <span className="hidden sm:block h-6 w-px bg-white/20" />
-            <button
-              title="Archive — hide from timeline (reversible in Immich)"
-              className="flex items-center gap-1 rounded px-2 py-1 text-sm text-white/60 hover:bg-white/10 disabled:opacity-40"
-              disabled={busy}
-              onClick={() => archiveAssets([viewerAsset.id])}
-            >
-              <Archive size={15} /> Archive
-            </button>
-            <AlertDialog
-              asChild
-              disabled={busy}
-              title="Move this photo to trash?"
-              description="It goes to Immich's trash (recoverable there until it's emptied), not permanent deletion."
-              onConfirm={() => trashAssets([viewerAsset.id])}
-            >
+          <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-4 py-3">
+            {/* Rating */}
+            <div className="flex items-center rounded-md border border-white/20 p-0.5">
+              <span className="pl-1.5 text-[10px] font-medium text-white/50 select-none">1–5</span>
+              <StarRow value={viewerAsset.rating} size={22} onRate={(n) => rateAssets([viewerAsset.id], n)} />
+            </div>
+            {/* Pick status */}
+            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
+              <span className="px-1 text-[10px] font-medium text-white/50 select-none">
+                {displayKey(shortcuts.pick)}/{displayKey(shortcuts.reject)}/{displayKey(shortcuts.unflag)}
+              </span>
               <button
-                className="flex items-center gap-1 rounded px-2 py-1 text-sm text-red-400 hover:bg-white/10 disabled:opacity-40"
-                disabled={busy}
+                title={`Pick (${displayKey(shortcuts.pick)})`}
+                className={`rounded p-1.5 ${viewerAsset.picked ? "bg-emerald-600 text-white" : "text-white/60 hover:bg-white/10"}`}
+                onClick={() => flagAssets([viewerAsset.id], "pick")}
               >
-                <Trash2 size={15} /> Trash
+                <CheckCircle2 size={15} />
               </button>
-            </AlertDialog>
+              <button
+                title={`Reject (${displayKey(shortcuts.reject)})`}
+                className={`rounded p-1.5 ${viewerAsset.rejected ? "bg-red-600 text-white" : "text-white/60 hover:bg-white/10"}`}
+                onClick={() => flagAssets([viewerAsset.id], "reject")}
+              >
+                <XCircle size={15} />
+              </button>
+              <button
+                title={`Unflag (${displayKey(shortcuts.unflag)})`}
+                className={`rounded p-1.5 ${!viewerAsset.picked && !viewerAsset.rejected ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10"}`}
+                onClick={() => flagAssets([viewerAsset.id], null)}
+              >
+                <Circle size={15} />
+              </button>
+            </div>
+            {/* Review status */}
+            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
+              <span className="px-1 text-[10px] font-medium text-white/50 select-none">{displayKey(shortcuts.reviewed)}</span>
+              <button
+                title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`}
+                className={`rounded p-1.5 ${viewerAsset.reviewed ? "bg-sky-600 text-white" : "text-white/60 hover:bg-white/10"}`}
+                onClick={() => reviewAssets([viewerAsset.id], true)}
+              >
+                <Glasses size={15} />
+              </button>
+              <button
+                title="Mark Unreviewed"
+                className={`rounded p-1.5 ${!viewerAsset.reviewed ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10"}`}
+                onClick={() => reviewAssets([viewerAsset.id], false)}
+              >
+                <GlassesOff size={15} />
+              </button>
+            </div>
+            {/* Favorite */}
+            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
+              <span className="px-1 text-[10px] font-medium text-white/50 select-none">{displayKey(shortcuts.favorite)}</span>
+              <button
+                title={`Favorite (${displayKey(shortcuts.favorite)})`}
+                className={`rounded p-1.5 ${viewerAsset.isFavorite ? "text-pink-500" : "text-white/60 hover:bg-white/10"}`}
+                onClick={() => favoriteAssets([viewerAsset.id], true)}
+              >
+                <Heart size={15} className={viewerAsset.isFavorite ? "fill-pink-500" : ""} />
+              </button>
+              <button
+                title="Unfavorite"
+                className={`rounded p-1.5 ${!viewerAsset.isFavorite ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10"}`}
+                onClick={() => favoriteAssets([viewerAsset.id], false)}
+              >
+                <Heart size={15} />
+              </button>
+            </div>
+            {/* Archive / trash */}
+            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
+              <button
+                title="Archive (hide from timeline, reversible)"
+                className="rounded p-1.5 text-white/60 hover:bg-white/10 disabled:opacity-40"
+                disabled={busy}
+                onClick={() => archiveAssets([viewerAsset.id])}
+              >
+                <Archive size={15} />
+              </button>
+              <AlertDialog
+                asChild
+                disabled={busy}
+                title="Move this photo to trash?"
+                description="It goes to Immich's trash (recoverable there until it's emptied), not permanent deletion."
+                onConfirm={() => trashAssets([viewerAsset.id])}
+              >
+                <button className="rounded p-1.5 text-red-400 hover:bg-white/10 disabled:opacity-40" disabled={busy}>
+                  <Trash2 size={15} />
+                </button>
+              </AlertDialog>
+            </div>
           </div>
         </div>
       )}
