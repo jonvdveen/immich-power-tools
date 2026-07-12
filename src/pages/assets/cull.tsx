@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
+import { useTheme } from "next-themes";
 
 import ExifPanel from "@/components/cull/ExifPanel";
 import HelpGuide from "@/components/cull/HelpGuide";
@@ -119,6 +120,19 @@ export default function CullPhotosPage() {
   const [reviewStatusFilter, setReviewStatusFilter] = useState<Set<ICullReviewStatus>>(new Set(["unreviewed"]));
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const { exImmichUrl } = useConfig();
+  // Full-screen viewer's bottom control chips key off the site theme (the
+  // viewer's photo backdrop itself stays black in both themes — this only
+  // governs the translucent chip fill/text so it still contrasts with an
+  // arbitrary photo behind it).
+  const { resolvedTheme } = useTheme();
+  const isDarkViewerChrome = resolvedTheme !== "light";
+  const viewerChipBg = isDarkViewerChrome ? "bg-black/30" : "bg-white/30";
+  const viewerChipBorder = isDarkViewerChrome ? "border-white/20" : "border-black/15";
+  const viewerMutedText = isDarkViewerChrome ? "text-white/60" : "text-black/60";
+  const viewerMutedHint = isDarkViewerChrome ? "text-white/50" : "text-black/50";
+  const viewerHoverBg = isDarkViewerChrome ? "hover:bg-white/10" : "hover:bg-black/10";
+  const viewerStarMuted = isDarkViewerChrome ? "text-white/40" : "text-black/40";
+  const viewerOnBg = isDarkViewerChrome ? "bg-white/20 text-white" : "bg-black/20 text-black";
 
   // --- data ---
   const [assets, setAssets] = useState<ICullAsset[]>([]);
@@ -893,82 +907,86 @@ export default function CullPhotosPage() {
           </button>
 
           {/* bottom overlay: same bordered-cluster + key-hint layout as the
-              grid's bulk-action bar, just targeting this one photo.
-              flex-wrap so nothing clips off-screen on phones. */}
-          <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-4 py-3">
+              grid's bulk-action bar, just targeting this one photo. Each
+              group carries its own solid 30%-opacity chip (instead of one
+              whole-strip gradient) so it contrasts with the photo directly
+              behind it regardless of that photo's own colors; the chip tint
+              itself follows the site theme. flex-wrap so nothing clips
+              off-screen on phones. */}
+          <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-2 px-4 py-3">
             {/* Rating */}
-            <div className="flex items-center rounded-md border border-white/20 p-0.5">
-              <span className="pl-1.5 text-[10px] font-medium text-white/50 select-none">1–5</span>
-              <StarRow value={viewerAsset.rating} size={22} onRate={(n) => rateAssets([viewerAsset.id], n)} />
+            <div className={`flex items-center rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
+              <span className={`pl-1.5 text-[10px] font-medium ${viewerMutedHint} select-none`}>1–5</span>
+              <StarRow value={viewerAsset.rating} size={22} onRate={(n) => rateAssets([viewerAsset.id], n)} mutedClassName={viewerStarMuted} />
             </div>
             {/* Pick status */}
-            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
-              <span className="px-1 text-[10px] font-medium text-white/50 select-none">
+            <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
+              <span className={`px-1 text-[10px] font-medium ${viewerMutedHint} select-none`}>
                 {displayKey(shortcuts.pick)}/{displayKey(shortcuts.reject)}/{displayKey(shortcuts.unflag)}
               </span>
               <button
                 title={`Pick (${displayKey(shortcuts.pick)})`}
-                className={`rounded p-1.5 ${viewerAsset.picked ? "bg-emerald-600 text-white" : "text-white/60 hover:bg-white/10"}`}
+                className={`rounded p-1.5 ${viewerAsset.picked ? "bg-emerald-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => flagAssets([viewerAsset.id], "pick")}
               >
                 <CheckCircle2 size={15} />
               </button>
               <button
                 title={`Reject (${displayKey(shortcuts.reject)})`}
-                className={`rounded p-1.5 ${viewerAsset.rejected ? "bg-red-600 text-white" : "text-white/60 hover:bg-white/10"}`}
+                className={`rounded p-1.5 ${viewerAsset.rejected ? "bg-red-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => flagAssets([viewerAsset.id], "reject")}
               >
                 <XCircle size={15} />
               </button>
               <button
                 title={`Unflag (${displayKey(shortcuts.unflag)})`}
-                className={`rounded p-1.5 ${!viewerAsset.picked && !viewerAsset.rejected ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10"}`}
+                className={`rounded p-1.5 ${!viewerAsset.picked && !viewerAsset.rejected ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => flagAssets([viewerAsset.id], null)}
               >
                 <Circle size={15} />
               </button>
             </div>
             {/* Review status */}
-            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
-              <span className="px-1 text-[10px] font-medium text-white/50 select-none">{displayKey(shortcuts.reviewed)}</span>
+            <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
+              <span className={`px-1 text-[10px] font-medium ${viewerMutedHint} select-none`}>{displayKey(shortcuts.reviewed)}</span>
               <button
                 title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`}
-                className={`rounded p-1.5 ${viewerAsset.reviewed ? "bg-sky-600 text-white" : "text-white/60 hover:bg-white/10"}`}
+                className={`rounded p-1.5 ${viewerAsset.reviewed ? "bg-sky-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => reviewAssets([viewerAsset.id], true)}
               >
                 <Glasses size={15} />
               </button>
               <button
                 title="Mark Unreviewed"
-                className={`rounded p-1.5 ${!viewerAsset.reviewed ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10"}`}
+                className={`rounded p-1.5 ${!viewerAsset.reviewed ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => reviewAssets([viewerAsset.id], false)}
               >
                 <GlassesOff size={15} />
               </button>
             </div>
             {/* Favorite */}
-            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
-              <span className="px-1 text-[10px] font-medium text-white/50 select-none">{displayKey(shortcuts.favorite)}</span>
+            <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
+              <span className={`px-1 text-[10px] font-medium ${viewerMutedHint} select-none`}>{displayKey(shortcuts.favorite)}</span>
               <button
                 title={`Favorite (${displayKey(shortcuts.favorite)})`}
-                className={`rounded p-1.5 ${viewerAsset.isFavorite ? "text-pink-500" : "text-white/60 hover:bg-white/10"}`}
+                className={`rounded p-1.5 ${viewerAsset.isFavorite ? "text-pink-500" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => favoriteAssets([viewerAsset.id], true)}
               >
                 <Heart size={15} className={viewerAsset.isFavorite ? "fill-pink-500" : ""} />
               </button>
               <button
                 title="Unfavorite"
-                className={`rounded p-1.5 ${!viewerAsset.isFavorite ? "bg-white/20 text-white" : "text-white/60 hover:bg-white/10"}`}
+                className={`rounded p-1.5 ${!viewerAsset.isFavorite ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => favoriteAssets([viewerAsset.id], false)}
               >
                 <Heart size={15} />
               </button>
             </div>
             {/* Archive / trash */}
-            <div className="flex items-center gap-0.5 rounded-md border border-white/20 p-0.5">
+            <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
               <button
                 title="Archive (hide from timeline, reversible)"
-                className="rounded p-1.5 text-white/60 hover:bg-white/10 disabled:opacity-40"
+                className={`rounded p-1.5 ${viewerMutedText} ${viewerHoverBg} disabled:opacity-40`}
                 disabled={busy}
                 onClick={() => archiveAssets([viewerAsset.id])}
               >
@@ -981,7 +999,7 @@ export default function CullPhotosPage() {
                 description="It goes to Immich's trash (recoverable there until it's emptied), not permanent deletion."
                 onConfirm={() => trashAssets([viewerAsset.id])}
               >
-                <button className="rounded p-1.5 text-red-400 hover:bg-white/10 disabled:opacity-40" disabled={busy}>
+                <button className={`rounded p-1.5 text-red-400 ${viewerHoverBg} disabled:opacity-40`} disabled={busy}>
                   <Trash2 size={15} />
                 </button>
               </AlertDialog>
