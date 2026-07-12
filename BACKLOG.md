@@ -187,12 +187,6 @@ context in project memory (`immich-power-tools-cull.md`,
 
 ## GPS Manager (`/assets/location-manager`; renamed from "Location Manager" 2026-07-11 — URL/file path kept, same precedent as the Rate & Cull rename)
 
-- **LOC-3**: Back/Forward (jump to next/previous missing-GPS photo) only
-  searches currently-loaded photos (500/page) — can't reach missing-GPS
-  photos on unloaded pages. User asked about this 2026-07-11; proposed
-  fix is a server endpoint that finds the true next/previous missing-GPS
-  asset in the DB (respecting album/date filters) and jumps the grid to
-  the page containing it. Not yet built — user hasn't said go.
 - Reverted the Esri map-tile experiment (2026-07-11): user reported real
   accuracy problems (a workplace shown on top of a lake, houses on their
   own street missing) — Esri's World_Street_Map/Dark_Gray_Canvas blend
