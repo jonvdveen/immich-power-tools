@@ -4,10 +4,33 @@ Short ids, removed when resolved (not archived). See CLAUDE.md-equivalent
 context in project memory (`immich-power-tools-cull.md`,
 `face-review-powertools-integration.md`) for the "why" behind each area.
 
+## Upstream PRs (all submitted 2026-07-12 — awaiting review)
+
+Everything the fork built beyond the already-merged workflow PRs (#295,
+#297–301) is now open against upstream's `prerelease` branch, one PR per
+module (Face Review split into four per `FACE_REVIEW_PR_NOTES.md`). Fork-only
+files (README banner, GETTING_STARTED, CHANGELOG, BACKLOG, launch.json) were
+excluded. Each branch was assembled off current `prerelease`, `tsc`-clean;
+upstream CI green on the first ones.
+
+- **#304** `.dockerignore` — exclude `.env` from the build context (security).
+- **#305** Rate & Cull.
+- **#306** Tag Manager.
+- **#307** Maps: Leaflet → MapLibre migration (bun.lock regenerated).
+- **#308** GPS Manager (stacked on #307).
+- **#309/#310/#311/#312** Face Review — engine / read API / write API / UI
+  (a linear stack, review in order).
+
+Follow-ups when the maintainer engages: the two immich-proxy thumbnail
+cache-header tweaks and the FloatingBar sidebar-centering fix were left out of
+the module PRs (general polish, not required by any module) — offer if
+wanted. Note upstream tracks a stale `package-lock.json` (they build with
+bun); left untouched.
+
 ## Rate & Cull (photo rating/culling tool, `/assets/cull`; renamed from "Cull Photos" in v0.24.3)
 
-- **CULL-4**: No upstream PR prep started (mirrors the Face Review PR
-  deferral — user wants to be "very very confident and satisfied" first).
+- **CULL-4**: Upstream PR submitted 2026-07-12 as #305 (was deferred until the
+  user was "very very confident and satisfied"). Resolve/remove once merged.
 - Released in v0.24.0 (2026-07-06): favorites (F/.), Reviewed workflow (R +
   filter defaulting to Unreviewed), EXIF panel (I), open-in-Immich button,
   "?" help guide. Flag tags live at
@@ -54,9 +77,9 @@ context in project memory (`immich-power-tools-cull.md`,
 - Stable, deployed, 10 user-requested UX enhancements applied 2026-07-05
   (search, scan-results diff, tab-bar layout, single Select mode, cluster
   fixes, Find More multi-select). See `face-review-powertools-integration.md`.
-- Upstream PR still deferred by user request — see
-  `local-testing/FACE_REVIEW_PR_NOTES.md` (git-ignored) for the as-built
-  4-PR split when ready.
+- Upstream PRs submitted 2026-07-12 as the #309→#312 stack (engine / read /
+  write / UI), following `local-testing/FACE_REVIEW_PR_NOTES.md`'s 4-PR
+  split. Awaiting review.
 - Released in v0.24.1 (2026-07-07), three commits (125dfba, 8767bbc,
   17ad8d5). Fixes 5 bugs the user found in manual testing (PersonNameInput
   stale-closure race creating wrong people from autocomplete; whole-person
