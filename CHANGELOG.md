@@ -7,6 +7,18 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.30.5 — 2026-07-12
+
+A small readability fix for the full-screen photo viewer in Rate & Cull.
+
+- **Changed:** the controls along the bottom of the full-screen viewer used
+  to share one faint strip that stretched across the whole width, which
+  could wash out against a bright photo. Each group of controls (rating,
+  pick status, review status, favorite, archive & trash) now sits on its
+  own solid rounded chip, so the buttons stay easy to read no matter what's
+  behind them. In light mode the chips are light with dark icons; in dark
+  mode they're dark with light icons.
+
 ## v0.30.4 — 2026-07-11
 
 Carried yesterday's Rate & Cull bottom-bar redesign into the full-screen
