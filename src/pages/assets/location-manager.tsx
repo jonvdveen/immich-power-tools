@@ -861,6 +861,7 @@ export default function LocationManager() {
                     assets={assets}
                     selectable
                     clickToSelect
+                    resizable
                     renderExtras={renderThumbnailExtras}
                     onPhotoHover={setHoveredAssetId}
                     highlightedAssetId={flashedAssetId}

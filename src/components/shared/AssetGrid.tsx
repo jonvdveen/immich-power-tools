@@ -12,7 +12,7 @@ import Video from "yet-another-react-lightbox/plugins/video";
 import { usePhotoSelectionContext } from '@/contexts/PhotoSelectionContext';
 import { useConfig } from '@/contexts/ConfigContext';
 import dynamic from 'next/dynamic';
-import { Heart, Info, Trash2, ExternalLink } from 'lucide-react';
+import { Heart, Info, Trash2, ExternalLink, LayoutGrid } from 'lucide-react';
 import { updateAssets, deleteAssets } from '@/handlers/api/asset.handler';
 import { toast } from '@/components/ui/use-toast';
 import {
@@ -55,6 +55,10 @@ interface AssetGridProps {
   onSelectionChange?: (ids: string[]) => void;
   onDeleteAsset?: (id: string) => void;
   onFavoriteAsset?: (id: string, isFavorite: boolean) => void;
+  /** Show a bottom-left thumbnail-size slider (persisted per-browser), like
+   *  the People Manager grid control. Opt-in so pages without a use for it
+   *  aren't given a floating control. */
+  resizable?: boolean;
 }
 
 interface AssetGridRef {
@@ -63,9 +67,24 @@ interface AssetGridRef {
   unselectAll: () => void;
 }
 
-const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal = true, selectable = false, clickToSelect = false, renderExtras, onPhotoHover, highlightedAssetId, onSelectionChange, onDeleteAsset, onFavoriteAsset }, ref) => {
+const ASSET_GRID_ROW_HEIGHT_KEY = "asset_grid_row_height";
+const ASSET_GRID_ROW_MIN = 90;
+const ASSET_GRID_ROW_MAX = 340;
+const ASSET_GRID_ROW_DEFAULT = 150;
+
+const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal = true, selectable = false, clickToSelect = false, renderExtras, onPhotoHover, highlightedAssetId, onSelectionChange, onDeleteAsset, onFavoriteAsset, resizable = false }, ref) => {
   const [index, setIndex] = useState(-1);
   const [lastSelectedIndex, setLastSelectedIndex] = useState(-1);
+  const [rowHeight, setRowHeight] = useState(ASSET_GRID_ROW_DEFAULT);
+  useEffect(() => {
+    if (!resizable) return;
+    const rh = parseInt(localStorage.getItem(ASSET_GRID_ROW_HEIGHT_KEY) || "", 10);
+    if (!Number.isNaN(rh)) setRowHeight(Math.min(ASSET_GRID_ROW_MAX, Math.max(ASSET_GRID_ROW_MIN, rh)));
+  }, [resizable]);
+  const changeRowHeight = (v: number) => {
+    setRowHeight(v);
+    localStorage.setItem(ASSET_GRID_ROW_HEIGHT_KEY, String(v));
+  };
   const [showInfoPanel, setShowInfoPanel] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('assetInfoPanelOpen') === 'true'
@@ -399,8 +418,8 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
 
       <RowsPhotoAlbum
         photos={images}
-        targetRowHeight={150}
-        rowConstraints={{ singleRowMaxHeight: 300 }}
+        targetRowHeight={resizable ? rowHeight : 150}
+        rowConstraints={{ singleRowMaxHeight: (resizable ? rowHeight : 150) * 2 }}
         spacing={2}
         padding={0}
         onClick={({ index, event, photo }) => handleClick(index, photo, event)}
@@ -422,6 +441,22 @@ const AssetGrid = forwardRef<AssetGridRef, AssetGridProps>(({ assets, isInternal
             ),
         }}
       />
+
+      {resizable && assets.length > 0 && (
+        <div className="fixed bottom-4 left-[210px] lg:left-[250px] z-20 flex items-center gap-3 rounded-full border bg-background/90 px-4 py-2 shadow-md backdrop-blur-sm">
+          <LayoutGrid className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <input
+            type="range"
+            min={ASSET_GRID_ROW_MIN}
+            max={ASSET_GRID_ROW_MAX}
+            step={10}
+            value={rowHeight}
+            onChange={(e) => changeRowHeight(Number(e.target.value))}
+            className="h-1.5 w-28 cursor-pointer appearance-none rounded-full bg-muted accent-foreground"
+            title={`Thumbnail size (${rowHeight}px)`}
+          />
+        </div>
+      )}
     </div>
   );
 })
