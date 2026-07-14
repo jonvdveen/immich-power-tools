@@ -3,7 +3,7 @@ import "react-photo-album/rows.css";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, CheckCircle2, ChevronLeft, ChevronRight, Circle, ExternalLink, Filter, Glasses, Heart,
-  Info, Loader2, SortAsc, SortDesc, Star, Trash2, X, XCircle,
+  Info, LayoutGrid, Loader2, SortAsc, SortDesc, Star, Trash2, X, XCircle,
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
@@ -38,6 +38,26 @@ import {
 import { IAlbum } from "@/types/album";
 
 const PAGE_SIZE = 200;
+
+// --- display-size preferences (per-browser, like the People Manager grid
+// slider and this app's other UI prefs). The grid slider drives the justified
+// row height; the control-size tier scales the action bars (bulk + viewer) and
+// the per-thumbnail badges so older eyes / big or high-DPI displays aren't
+// stuck with tiny fixed-pixel chrome. ---
+const CULL_ROW_HEIGHT_KEY = "cull_grid_row_height";
+const CULL_CONTROL_SIZE_KEY = "cull_control_size";
+const ROW_HEIGHT_MIN = 90;
+const ROW_HEIGHT_MAX = 340;
+const ROW_HEIGHT_DEFAULT = 150;
+
+type CullControlSize = "md" | "lg" | "xl";
+const CONTROL_SIZES: Record<CullControlSize, {
+  icon: number; star: number; vstar: number; hint: number; btn: string; pad: string; label: string;
+}> = {
+  md: { icon: 15, star: 16, vstar: 22, hint: 10, btn: "h-7 px-2",   pad: "p-1.5", label: "Normal controls" },
+  lg: { icon: 20, star: 21, vstar: 30, hint: 12, btn: "h-9 px-2.5", pad: "p-2",   label: "Large controls" },
+  xl: { icon: 26, star: 27, vstar: 38, hint: 14, btn: "h-11 px-3",  pad: "p-2.5", label: "Extra-large controls" },
+};
 
 type ISourceMode = "library" | "album" | "range";
 type IFlag = "pick" | "reject" | null;
@@ -150,6 +170,30 @@ export default function CullPhotosPage() {
   const [showExif, setShowExif] = useState(false);
   const [shortcuts, setShortcutsState] = useState(loadCullShortcuts);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // --- display size (hydrated from localStorage after mount, SSR-safe) ---
+  const [gridRowHeight, setGridRowHeight] = useState(ROW_HEIGHT_DEFAULT);
+  const [controlSize, setControlSizeState] = useState<CullControlSize>("md");
+  useEffect(() => {
+    const rh = parseInt(localStorage.getItem(CULL_ROW_HEIGHT_KEY) || "", 10);
+    if (!Number.isNaN(rh)) setGridRowHeight(Math.min(ROW_HEIGHT_MAX, Math.max(ROW_HEIGHT_MIN, rh)));
+    const cs = localStorage.getItem(CULL_CONTROL_SIZE_KEY);
+    if (cs === "md" || cs === "lg" || cs === "xl") setControlSizeState(cs);
+  }, []);
+  const changeGridRowHeight = (v: number) => {
+    setGridRowHeight(v);
+    localStorage.setItem(CULL_ROW_HEIGHT_KEY, String(v));
+  };
+  const changeControlSize = (v: CullControlSize) => {
+    setControlSizeState(v);
+    localStorage.setItem(CULL_CONTROL_SIZE_KEY, v);
+  };
+  const CTRL = CONTROL_SIZES[controlSize];
+  // Per-thumbnail badges scale with the grid, clamped so they stay legible at
+  // the small end and don't dominate at the large end.
+  const badgeScale = Math.max(0.85, Math.min(2, gridRowHeight / ROW_HEIGHT_DEFAULT));
+  const badgeText = Math.round(10 * badgeScale);
+  const badgeIcon = Math.round(10 * badgeScale);
   const setShortcuts = useCallback((next: Record<ICullShortcutAction, string>) => {
     setShortcutsState(next);
     saveCullShortcuts(next);
@@ -384,6 +428,11 @@ export default function CullPhotosPage() {
   // --- keyboard ---
   const viewerAsset = viewerIndex !== null ? assets[viewerIndex] ?? null : null;
 
+  // O(1) lookup for the grid's per-thumbnail badge overlay (`assets.find`
+  // inside the extras renderer was O(n) per photo, O(n²) per grid render) —
+  // also read by the bulk R/F keyboard toggles below.
+  const assetsById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || shortcutsOpen) return;
@@ -438,15 +487,25 @@ export default function CullPhotosPage() {
         flagAssets(targetIds, null);
       } else if (keyMatches(e, shortcuts.reviewed)) {
         e.preventDefault();
-        reviewAssets(targetIds, !(viewerAsset && viewerAsset.reviewed));
+        // Toggle: in the viewer, flip the open photo; for a grid selection,
+        // un-review only if every selected photo is already reviewed, else
+        // mark them all reviewed. (Unlike Pick/Reject, Reviewed has no
+        // separate "un-" key, so the shortcut must toggle both ways.)
+        const nextReviewed = viewerAsset
+          ? !viewerAsset.reviewed
+          : !selectedIds.every((id) => assetsById.get(id)?.reviewed);
+        reviewAssets(targetIds, nextReviewed);
       } else if (keyMatches(e, shortcuts.favorite)) {
         e.preventDefault();
-        favoriteAssets(targetIds, !(viewerAsset && viewerAsset.isFavorite));
+        const nextFavorite = viewerAsset
+          ? !viewerAsset.isFavorite
+          : !selectedIds.every((id) => assetsById.get(id)?.isFavorite);
+        favoriteAssets(targetIds, nextFavorite);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [viewerAsset, viewerIndex, selectedIds, assets.length, shortcuts, shortcutsOpen, rateAssets, flagAssets, reviewAssets, favoriteAssets]);
+  }, [viewerAsset, viewerIndex, selectedIds, assets.length, assetsById, shortcuts, shortcutsOpen, rateAssets, flagAssets, reviewAssets, favoriteAssets]);
 
   // --- grid photos ---
   const images: AssetPhoto[] = useMemo(() => {
@@ -461,10 +520,6 @@ export default function CullPhotosPage() {
       duration: a.duration != null ? String(a.duration) : undefined,
     }));
   }, [assets, selectedIds]);
-
-  // O(1) lookup for the grid's per-thumbnail badge overlay — `assets.find`
-  // inside the extras renderer was O(n) per photo, O(n²) per grid render.
-  const assetsById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
 
   // The one rating every selected photo shares (null when mixed or unrated) —
   // lets the bulk bar's stars show the current state, so clicking the lit
@@ -552,6 +607,24 @@ export default function CullPhotosPage() {
         leftComponent="Rate & Cull"
         rightComponent={
           <div className="flex items-center gap-2">
+            {/* Control size — scales the bulk bar + full-screen viewer controls
+                (and their key hints) for big/high-DPI displays and older eyes. */}
+            <div className="flex items-center rounded-md border p-0.5" title="Control size">
+              {(["md", "lg", "xl"] as CullControlSize[]).map((s, i) => (
+                <button
+                  key={s}
+                  type="button"
+                  title={CONTROL_SIZES[s].label}
+                  className={`flex h-6 w-6 items-center justify-center rounded font-semibold leading-none ${
+                    controlSize === s ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-accent"
+                  }`}
+                  style={{ fontSize: 10 + i * 3 }}
+                  onClick={() => changeControlSize(s)}
+                >
+                  A
+                </button>
+              ))}
+            </div>
             <ShortcutSettings
               open={shortcutsOpen}
               onOpenChange={setShortcutsOpen}
@@ -705,8 +778,8 @@ export default function CullPhotosPage() {
           <>
             <RowsPhotoAlbum
               photos={images}
-              targetRowHeight={150}
-              rowConstraints={{ singleRowMaxHeight: 300 }}
+              targetRowHeight={gridRowHeight}
+              rowConstraints={{ singleRowMaxHeight: gridRowHeight * 2 }}
               spacing={2}
               padding={0}
               onClick={({ index, event, photo }) => {
@@ -718,25 +791,28 @@ export default function CullPhotosPage() {
                 extras: (_, { photo }) => {
                   const a = assetsById.get(photo.id);
                   if (!a || (!a.rating && !a.picked && !a.rejected && !a.reviewed && !a.isFavorite)) return null;
+                  // Badges scale with the grid slider so they stay proportional
+                  // to the thumbnail (and legible when it's blown up big).
+                  const badgeStyle = { fontSize: badgeText } as const;
                   return (
                     <div className="pointer-events-none absolute bottom-1 left-1 flex items-center gap-1">
                       {!!a.rating && (
-                        <span className="rounded bg-black/60 px-1 py-0.5 text-[10px] font-semibold text-amber-400">
+                        <span style={badgeStyle} className="rounded bg-black/60 px-1 py-0.5 font-semibold text-amber-400">
                           ★{a.rating}
                         </span>
                       )}
                       {a.picked && (
-                        <span className="rounded bg-emerald-600/90 px-1 py-0.5 text-[10px] font-semibold text-white">P</span>
+                        <span style={badgeStyle} className="rounded bg-emerald-600/90 px-1 py-0.5 font-semibold text-white">P</span>
                       )}
                       {a.rejected && (
-                        <span className="rounded bg-red-600/90 px-1 py-0.5 text-[10px] font-semibold text-white">✕</span>
+                        <span style={badgeStyle} className="rounded bg-red-600/90 px-1 py-0.5 font-semibold text-white">✕</span>
                       )}
                       {a.reviewed && (
-                        <span className="rounded bg-sky-600/90 px-1 py-0.5 text-[10px] font-semibold text-white">✓</span>
+                        <span style={badgeStyle} className="rounded bg-sky-600/90 px-1 py-0.5 font-semibold text-white">✓</span>
                       )}
                       {a.isFavorite && (
                         <span className="rounded bg-black/60 p-0.5">
-                          <Heart size={10} className="fill-pink-500 text-pink-500" />
+                          <Heart size={badgeIcon} className="fill-pink-500 text-pink-500" />
                         </span>
                       )}
                     </div>
@@ -755,6 +831,24 @@ export default function CullPhotosPage() {
         )}
       </div>
 
+      {/* grid-size slider — fixed bottom-left pill, mirrors the People Manager
+          control. Hidden in the full-screen viewer. */}
+      {!!assets.length && viewerIndex === null && (
+        <div className="fixed bottom-4 left-[210px] lg:left-[250px] z-20 flex items-center gap-3 rounded-full border bg-background/90 px-4 py-2 shadow-md backdrop-blur-sm">
+          <LayoutGrid className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <input
+            type="range"
+            min={ROW_HEIGHT_MIN}
+            max={ROW_HEIGHT_MAX}
+            step={10}
+            value={gridRowHeight}
+            onChange={(e) => changeGridRowHeight(Number(e.target.value))}
+            className="h-1.5 w-28 cursor-pointer appearance-none rounded-full bg-muted accent-foreground"
+            title={`Thumbnail size (${gridRowHeight}px)`}
+          />
+        </div>
+      )}
+
       {/* bulk action bar */}
       {selectionActive && viewerIndex === null && (
         <FloatingBar className="!max-w-[95vw] w-fit flex-wrap justify-center gap-2">
@@ -765,53 +859,53 @@ export default function CullPhotosPage() {
           {/* Rating — shows the selection's shared rating; clicking the lit
               star clears it (no separate clear-rating button). */}
           <div className="flex items-center rounded-md border p-0.5">
-            <span className="pl-1.5 text-[10px] font-medium text-muted-foreground select-none">1–5</span>
+            <span style={{ fontSize: CTRL.hint }} className="pl-1.5 font-medium text-muted-foreground select-none">1–5</span>
             <StarRow
               value={sharedSelectedRating}
-              size={16}
+              size={CTRL.star}
               onRate={(n) => rateAssets(selectedIds, n)}
               mutedClassName="text-muted-foreground/40"
             />
           </div>
           {/* Pick status */}
           <div className="flex items-center gap-0.5 rounded-md border p-0.5">
-            <span className="px-1 text-[10px] font-medium text-muted-foreground select-none">
+            <span style={{ fontSize: CTRL.hint }} className="px-1 font-medium text-muted-foreground select-none">
               {displayKey(shortcuts.pick)}/{displayKey(shortcuts.reject)}/{displayKey(shortcuts.unflag)}
             </span>
-            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Pick (${displayKey(shortcuts.pick)})`} onClick={() => flagAssets(selectedIds, "pick")}>
-              <CheckCircle2 size={15} className="text-emerald-500" />
+            <Button size="sm" variant="ghost" className={CTRL.btn} title={`Pick (${displayKey(shortcuts.pick)})`} onClick={() => flagAssets(selectedIds, "pick")}>
+              <CheckCircle2 size={CTRL.icon} className="text-emerald-500" />
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Reject (${displayKey(shortcuts.reject)})`} onClick={() => flagAssets(selectedIds, "reject")}>
-              <XCircle size={15} className="text-red-500" />
+            <Button size="sm" variant="ghost" className={CTRL.btn} title={`Reject (${displayKey(shortcuts.reject)})`} onClick={() => flagAssets(selectedIds, "reject")}>
+              <XCircle size={CTRL.icon} className="text-red-500" />
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Unflag (${displayKey(shortcuts.unflag)})`} onClick={() => flagAssets(selectedIds, null)}>
-              <Circle size={15} className="text-muted-foreground" />
+            <Button size="sm" variant="ghost" className={CTRL.btn} title={`Unflag (${displayKey(shortcuts.unflag)})`} onClick={() => flagAssets(selectedIds, null)}>
+              <Circle size={CTRL.icon} className="text-muted-foreground" />
             </Button>
           </div>
           {/* Review status */}
           <div className="flex items-center gap-0.5 rounded-md border p-0.5">
-            <span className="px-1 text-[10px] font-medium text-muted-foreground select-none">{displayKey(shortcuts.reviewed)}</span>
-            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`} onClick={() => reviewAssets(selectedIds, true)}>
-              <Glasses size={15} className="text-sky-500" />
+            <span style={{ fontSize: CTRL.hint }} className="px-1 font-medium text-muted-foreground select-none">{displayKey(shortcuts.reviewed)}</span>
+            <Button size="sm" variant="ghost" className={CTRL.btn} title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`} onClick={() => reviewAssets(selectedIds, true)}>
+              <Glasses size={CTRL.icon} className="text-sky-500" />
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
-              <GlassesOff size={15} className="text-muted-foreground" />
+            <Button size="sm" variant="ghost" className={CTRL.btn} title="Mark Unreviewed" onClick={() => reviewAssets(selectedIds, false)}>
+              <GlassesOff size={CTRL.icon} className="text-muted-foreground" />
             </Button>
           </div>
           {/* Favorite */}
           <div className="flex items-center gap-0.5 rounded-md border p-0.5">
-            <span className="px-1 text-[10px] font-medium text-muted-foreground select-none">{displayKey(shortcuts.favorite)}</span>
-            <Button size="sm" variant="ghost" className="h-7 px-2" title={`Favorite (${displayKey(shortcuts.favorite)})`} onClick={() => favoriteAssets(selectedIds, true)}>
-              <Heart size={15} className="fill-pink-500 text-pink-500" />
+            <span style={{ fontSize: CTRL.hint }} className="px-1 font-medium text-muted-foreground select-none">{displayKey(shortcuts.favorite)}</span>
+            <Button size="sm" variant="ghost" className={CTRL.btn} title={`Favorite (${displayKey(shortcuts.favorite)})`} onClick={() => favoriteAssets(selectedIds, true)}>
+              <Heart size={CTRL.icon} className="fill-pink-500 text-pink-500" />
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" title="Unfavorite" onClick={() => favoriteAssets(selectedIds, false)}>
-              <Heart size={15} className="text-muted-foreground" />
+            <Button size="sm" variant="ghost" className={CTRL.btn} title="Unfavorite" onClick={() => favoriteAssets(selectedIds, false)}>
+              <Heart size={CTRL.icon} className="text-muted-foreground" />
             </Button>
           </div>
           {/* Archive / trash */}
           <div className="flex items-center gap-0.5 rounded-md border p-0.5">
-            <Button size="sm" variant="ghost" className="h-7 px-2" title="Archive (hide from timeline, reversible)" disabled={busy} onClick={() => archiveAssets(selectedIds)}>
-              <Archive size={15} />
+            <Button size="sm" variant="ghost" className={CTRL.btn} title="Archive (hide from timeline, reversible)" disabled={busy} onClick={() => archiveAssets(selectedIds)}>
+              <Archive size={CTRL.icon} />
             </Button>
             <AlertDialog
               asChild
@@ -820,13 +914,13 @@ export default function CullPhotosPage() {
               description="They go to Immich's trash (recoverable there until it's emptied), not permanent deletion."
               onConfirm={() => trashAssets(selectedIds)}
             >
-              <Button size="sm" variant="ghost" className="h-7 px-2" title="Move to trash" disabled={busy}>
-                <Trash2 size={15} className="text-red-500" />
+              <Button size="sm" variant="ghost" className={CTRL.btn} title="Move to trash" disabled={busy}>
+                <Trash2 size={CTRL.icon} className="text-red-500" />
               </Button>
             </AlertDialog>
           </div>
-          <Button size="sm" variant="ghost" title="Clear selection (Esc)" onClick={() => setSelectedIds([])}>
-            <X size={15} />
+          <Button size="sm" variant="ghost" className={CTRL.btn} title="Clear selection (Esc)" onClick={() => setSelectedIds([])}>
+            <X size={CTRL.icon} />
           </Button>
         </FloatingBar>
       )}
@@ -916,81 +1010,81 @@ export default function CullPhotosPage() {
           <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-2 px-4 py-3">
             {/* Rating */}
             <div className={`flex items-center rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
-              <span className={`pl-1.5 text-[10px] font-medium ${viewerMutedHint} select-none`}>1–5</span>
-              <StarRow value={viewerAsset.rating} size={22} onRate={(n) => rateAssets([viewerAsset.id], n)} mutedClassName={viewerStarMuted} />
+              <span style={{ fontSize: CTRL.hint }} className={`pl-1.5 font-medium ${viewerMutedHint} select-none`}>1–5</span>
+              <StarRow value={viewerAsset.rating} size={CTRL.vstar} onRate={(n) => rateAssets([viewerAsset.id], n)} mutedClassName={viewerStarMuted} />
             </div>
             {/* Pick status */}
             <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
-              <span className={`px-1 text-[10px] font-medium ${viewerMutedHint} select-none`}>
+              <span style={{ fontSize: CTRL.hint }} className={`px-1 font-medium ${viewerMutedHint} select-none`}>
                 {displayKey(shortcuts.pick)}/{displayKey(shortcuts.reject)}/{displayKey(shortcuts.unflag)}
               </span>
               <button
                 title={`Pick (${displayKey(shortcuts.pick)})`}
-                className={`rounded p-1.5 ${viewerAsset.picked ? "bg-emerald-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
+                className={`rounded ${CTRL.pad} ${viewerAsset.picked ? "bg-emerald-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => flagAssets([viewerAsset.id], "pick")}
               >
-                <CheckCircle2 size={15} />
+                <CheckCircle2 size={CTRL.icon} />
               </button>
               <button
                 title={`Reject (${displayKey(shortcuts.reject)})`}
-                className={`rounded p-1.5 ${viewerAsset.rejected ? "bg-red-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
+                className={`rounded ${CTRL.pad} ${viewerAsset.rejected ? "bg-red-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => flagAssets([viewerAsset.id], "reject")}
               >
-                <XCircle size={15} />
+                <XCircle size={CTRL.icon} />
               </button>
               <button
                 title={`Unflag (${displayKey(shortcuts.unflag)})`}
-                className={`rounded p-1.5 ${!viewerAsset.picked && !viewerAsset.rejected ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
+                className={`rounded ${CTRL.pad} ${!viewerAsset.picked && !viewerAsset.rejected ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => flagAssets([viewerAsset.id], null)}
               >
-                <Circle size={15} />
+                <Circle size={CTRL.icon} />
               </button>
             </div>
             {/* Review status */}
             <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
-              <span className={`px-1 text-[10px] font-medium ${viewerMutedHint} select-none`}>{displayKey(shortcuts.reviewed)}</span>
+              <span style={{ fontSize: CTRL.hint }} className={`px-1 font-medium ${viewerMutedHint} select-none`}>{displayKey(shortcuts.reviewed)}</span>
               <button
                 title={`Mark Reviewed (${displayKey(shortcuts.reviewed)})`}
-                className={`rounded p-1.5 ${viewerAsset.reviewed ? "bg-sky-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
+                className={`rounded ${CTRL.pad} ${viewerAsset.reviewed ? "bg-sky-600 text-white" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => reviewAssets([viewerAsset.id], true)}
               >
-                <Glasses size={15} />
+                <Glasses size={CTRL.icon} />
               </button>
               <button
                 title="Mark Unreviewed"
-                className={`rounded p-1.5 ${!viewerAsset.reviewed ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
+                className={`rounded ${CTRL.pad} ${!viewerAsset.reviewed ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => reviewAssets([viewerAsset.id], false)}
               >
-                <GlassesOff size={15} />
+                <GlassesOff size={CTRL.icon} />
               </button>
             </div>
             {/* Favorite */}
             <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
-              <span className={`px-1 text-[10px] font-medium ${viewerMutedHint} select-none`}>{displayKey(shortcuts.favorite)}</span>
+              <span style={{ fontSize: CTRL.hint }} className={`px-1 font-medium ${viewerMutedHint} select-none`}>{displayKey(shortcuts.favorite)}</span>
               <button
                 title={`Favorite (${displayKey(shortcuts.favorite)})`}
-                className={`rounded p-1.5 ${viewerAsset.isFavorite ? "text-pink-500" : `${viewerMutedText} ${viewerHoverBg}`}`}
+                className={`rounded ${CTRL.pad} ${viewerAsset.isFavorite ? "text-pink-500" : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => favoriteAssets([viewerAsset.id], true)}
               >
-                <Heart size={15} className={viewerAsset.isFavorite ? "fill-pink-500" : ""} />
+                <Heart size={CTRL.icon} className={viewerAsset.isFavorite ? "fill-pink-500" : ""} />
               </button>
               <button
                 title="Unfavorite"
-                className={`rounded p-1.5 ${!viewerAsset.isFavorite ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
+                className={`rounded ${CTRL.pad} ${!viewerAsset.isFavorite ? viewerOnBg : `${viewerMutedText} ${viewerHoverBg}`}`}
                 onClick={() => favoriteAssets([viewerAsset.id], false)}
               >
-                <Heart size={15} />
+                <Heart size={CTRL.icon} />
               </button>
             </div>
             {/* Archive / trash */}
             <div className={`flex items-center gap-0.5 rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
               <button
                 title="Archive (hide from timeline, reversible)"
-                className={`rounded p-1.5 ${viewerMutedText} ${viewerHoverBg} disabled:opacity-40`}
+                className={`rounded ${CTRL.pad} ${viewerMutedText} ${viewerHoverBg} disabled:opacity-40`}
                 disabled={busy}
                 onClick={() => archiveAssets([viewerAsset.id])}
               >
-                <Archive size={15} />
+                <Archive size={CTRL.icon} />
               </button>
               <AlertDialog
                 asChild
@@ -999,8 +1093,8 @@ export default function CullPhotosPage() {
                 description="It goes to Immich's trash (recoverable there until it's emptied), not permanent deletion."
                 onConfirm={() => trashAssets([viewerAsset.id])}
               >
-                <button className={`rounded p-1.5 text-red-400 ${viewerHoverBg} disabled:opacity-40`} disabled={busy}>
-                  <Trash2 size={15} />
+                <button className={`rounded ${CTRL.pad} text-red-400 ${viewerHoverBg} disabled:opacity-40`} disabled={busy}>
+                  <Trash2 size={CTRL.icon} />
                 </button>
               </AlertDialog>
             </div>
