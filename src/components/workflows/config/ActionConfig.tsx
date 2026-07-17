@@ -25,7 +25,7 @@ function AlbumPicker({ value, onChange }: { value: string | undefined; onChange:
 
   useEffect(() => {
     setLoading(true);
-    listAlbums()
+    listAlbums({ sortBy: "albumName", sortOrder: "asc" })
       .then((data) => {
         setAlbums(data);
         if (value) {

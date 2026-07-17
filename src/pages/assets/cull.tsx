@@ -215,7 +215,7 @@ export default function CullPhotosPage() {
   }, [viewerIndex]);
 
   useEffect(() => {
-    listAlbums().then(setAlbums).catch(() => {
+    listAlbums({ sortBy: "albumName", sortOrder: "asc" }).then(setAlbums).catch(() => {
       toast({ title: "Error", description: "Failed to load albums.", variant: "destructive" });
     });
   }, []);

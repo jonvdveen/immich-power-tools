@@ -77,7 +77,7 @@ function AlbumSelect({
 
   useEffect(() => {
     setLoading(true);
-    listAlbums()
+    listAlbums({ sortBy: "albumName", sortOrder: "asc" })
       .then((res) => setAlbums(res || []))
       .catch(() => setAlbums([]))
       .finally(() => setLoading(false));

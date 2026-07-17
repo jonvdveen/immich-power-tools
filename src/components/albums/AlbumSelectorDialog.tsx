@@ -34,7 +34,7 @@ export default function AlbumSelectorDialog({ onSelected, onCreated, onSubmit }:
 
   const fetchData = () => {
     setLoading(true);
-    return listAlbums()
+    return listAlbums({ sortBy: "albumName", sortOrder: "asc" })
       .then(setAlbums)
       .catch(setErrorMessage)
       .finally(() => setLoading(false));

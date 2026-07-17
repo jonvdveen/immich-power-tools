@@ -16,8 +16,8 @@ export default function AlbumDropdown({ albumIds, onChange }: IAlbumDropdownProp
   const fetchAlbums = async () => {
     setLoading(true);
     return listAlbums({
-      sortBy: "createdAt",
-      sortOrder: "desc",
+      sortBy: "albumName",
+      sortOrder: "asc",
     }).then((albums) => setAlbums(albums)).catch((error) => setError(error)).finally(() => setLoading(false)) ;
   }
 

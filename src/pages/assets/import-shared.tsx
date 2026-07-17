@@ -186,7 +186,7 @@ export default function ImportSharedPage() {
 
   useEffect(() => {
     if (sharedData) {
-      listAlbums().then(setExistingAlbums).catch(console.error);
+      listAlbums({ sortBy: "albumName", sortOrder: "asc" }).then(setExistingAlbums).catch(console.error);
     }
   }, [sharedData]);
 
