@@ -7,6 +7,83 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.30.6 — 2026-07-16
+
+Workflows can now ask much more precise questions — "any of these" instead
+of only "all of these," whether a photo is in an album, and whether it's
+inside *or* outside a spot on the map. Rate & Cull can be sized to suit
+your screen and your eyes. Plus a distance bug that was quietly returning
+the wrong photos, and a fix that gave 3.5 GB of disk back.
+
+### Workflows
+
+- **New:** conditions can be combined with **ALL** or **ANY**. ALL means
+  every condition has to be true (this is what it always did, and stays
+  the default); ANY means just one of them does. You choose per "If" node
+  and per "Switch" case, and the wording between conditions changes to
+  "AND" or "OR" so you can read the rule back.
+- **New:** an **Album** condition — "in album" / "not in album," with a
+  dropdown to pick the album. This replaces "Not in Specific Album," which
+  made you paste in an album's internal ID. Any workflow already using the
+  old condition keeps working exactly as before; it's just no longer
+  offered when you add a new one.
+- **New:** **Geo Radius** now works both ways — photos **inside** a radius
+  or **outside** it. Handy for "everything that isn't from around home."
+- **New:** you no longer type latitude and longitude into two separate
+  boxes for Geo Radius. Search for a place by name ("Edmonton") and pick
+  it, or paste the whole coordinate pair into one field however you copied
+  it — Google Maps format, degrees, or the `53°32'46"N` style all work. If
+  it can't read what you pasted, it says so instead of quietly dropping
+  you at 0,0 like it used to. Pick a place by name and the node reads
+  "Geo Radius inside: Edmonton (50km)" instead of raw numbers.
+- **Fixed (important):** Geo Radius was measuring a **square, not a
+  circle** — so it reached about 1.4× too far at the corners and let in
+  photos that were never within the distance you asked for. On this
+  library, a 50 km radius was returning 512 photos it shouldn't have, some
+  of them roughly 70 km away. It now measures true distance, so the answer
+  matches what you asked for.
+- **New:** you can **delete a node** from the canvas using a button in its
+  settings panel. (Selecting a node and pressing Delete always worked, but
+  nothing said so — leaving stranded nodes with no obvious way to remove
+  them.) Removing a node also removes the lines connecting it.
+- **Changed:** the condition dropdown is now in alphabetical order rather
+  than the order they happened to be written in.
+- **Fixed:** every workflow run was recording a permanent row for every
+  photo it looked at, forever — so the app's database had grown to **17.6
+  million rows and 4.8 GB**, of which only 86,000 rows were actually
+  meaningful. It now keeps one row per photo per workflow. The database is
+  back down to 1.3 GB and workflow runs have one less thing slowing them
+  down. This is applied automatically on upgrade; nothing to do.
+
+### Rate & Cull
+
+- **New:** a **grid size slider** in the bottom-left corner (the same
+  control Manage People has). Thumbnails and their badges scale together,
+  so the grid can be made genuinely large on a big screen or a TV.
+- **New:** a **control size selector** in the header — the three A's. It
+  scales the buttons, stars, and keyboard hints in both the bottom action
+  bar and the full-screen viewer, in three steps: Normal, Large, and
+  Extra-large. Useful if the standard controls read as too small.
+  Both settings are remembered per browser, so each person can size it to
+  their own display without affecting anyone else.
+- **Fixed:** with several photos selected, the **R** (Reviewed) and **F**
+  (Favorite) keys only ever switched *on* — there was no way to un-review
+  or un-favorite a group. They now toggle: if everything selected is
+  already marked, the key clears it; otherwise it applies to all of them.
+- **New:** the GPS Manager photo grid gets the same size slider.
+
+### Everywhere else
+
+- **Changed:** every **album dropdown** in the app is now sorted
+  alphabetically — Rate & Cull, GPS Manager, Geo Heatmap, Import Shared,
+  the album picker dialog, and the workflow album condition and actions.
+  They used to appear in whatever order they came back in, usually by
+  date, which made finding an album by name a hunt. (The Manage Albums
+  page is unchanged, since it has its own sort control that you set.)
+- **Changed:** **Manage People** now shows only visible people by default.
+  Hidden people were hidden on purpose, so they stay out of the way until
+  you switch the Visibility dropdown to "Hidden" or "All."
+
 ## v0.30.5 — 2026-07-12
 
 A small readability fix for the full-screen photo viewer in Rate & Cull.
