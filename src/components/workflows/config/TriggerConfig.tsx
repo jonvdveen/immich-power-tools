@@ -18,7 +18,7 @@ export default function TriggerConfig({ subType, config, onChange, webhookToken 
       <div className="space-y-2">
         <Label className="text-xs">Cron Expression</Label>
         <Input
-          className="h-8 text-sm font-mono"
+          className="h-9 text-sm font-mono"
           placeholder="0 */6 * * *"
           value={config.cron || ""}
           onChange={(e) => onChange({ ...config, cron: e.target.value })}
@@ -36,7 +36,7 @@ export default function TriggerConfig({ subType, config, onChange, webhookToken 
       <div className="space-y-2">
         <Label className="text-xs">Webhook URL</Label>
         <div className="flex gap-1">
-          <Input className="h-8 text-xs font-mono" readOnly value={url} />
+          <Input className="h-9 text-xs font-mono" readOnly value={url} />
         </div>
         <p className="text-[10px] text-muted-foreground">
           Configure this URL in Immich admin webhook settings.

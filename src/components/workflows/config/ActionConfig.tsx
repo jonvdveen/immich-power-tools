@@ -39,7 +39,7 @@ function AlbumPicker({ value, onChange }: { value: string | undefined; onChange:
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className="flex items-center gap-2 h-8 px-3 w-full border rounded text-sm bg-background hover:bg-muted transition-colors text-left">
+        <button type="button" className="flex items-center gap-2 h-9 px-3 w-full border rounded text-sm bg-background hover:bg-muted transition-colors text-left">
           {selectedAlbum ? (
             <span className="truncate">{selectedAlbum.albumName}</span>
           ) : (
@@ -82,7 +82,7 @@ export default function ActionConfig({ subType, config, onChange }: ActionConfig
       <div className="space-y-2">
         <Label className="text-xs">Album Name Template</Label>
         <Input
-          className="h-8 text-sm"
+          className="h-9 text-sm"
           placeholder="Trip to {city} - {date}"
           value={config.nameTemplate || ""}
           onChange={(e) => onChange({ ...config, nameTemplate: e.target.value })}
@@ -120,7 +120,7 @@ export default function ActionConfig({ subType, config, onChange }: ActionConfig
       <div className="space-y-2">
         <Label className="text-xs">Tag Name</Label>
         <Input
-          className="h-8 text-sm"
+          className="h-9 text-sm"
           placeholder="e.g. Vacation"
           value={config.tagName || ""}
           onChange={(e) => onChange({ ...config, tagName: e.target.value })}

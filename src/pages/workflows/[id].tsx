@@ -177,7 +177,7 @@ function TriggerPopover({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant={isActive ? "secondary" : "ghost"} size="sm" className="h-8">
+        <Button variant={isActive ? "secondary" : "ghost"} size="sm" className="h-9">
           <Clock className="h-3.5 w-3.5 mr-1" />
           Triggers
           {isActive && (
@@ -491,7 +491,7 @@ function WorkflowEditorInner() {
         <span className="text-sm text-muted-foreground hidden sm:inline">Workflow</span>
         <span className="text-muted-foreground hidden sm:inline">/</span>
         <Input
-          className="h-8 w-64 text-sm font-medium"
+          className="h-9 w-64 text-sm font-medium"
           value={workflowName}
           onChange={(e) => setWorkflowName(e.target.value)}
         />
