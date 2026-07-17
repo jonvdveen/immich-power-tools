@@ -7,6 +7,32 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.31.0 — 2026-07-17
+
+Rate & Cull polish, and a tidy-up so the controls in the tools we've added
+match the size of the ones in the rest of the app.
+
+### Rate & Cull
+
+- **Changed:** the filter bar above the photos now stays put when you scroll
+  down through the grid, instead of disappearing off the top. So the source
+  picker, the rating/pick/review filters, and the sort button are always
+  within reach no matter how far down you've scrolled.
+- **New:** a **photos / videos** filter at the top — three little icons for
+  All, Photos only, and Videos only. Handy when you just want to rip through
+  your videos, or keep them out of the way while rating stills.
+
+### Consistent control sizes
+
+- **Changed:** the buttons, dropdowns and text boxes in the tools we've
+  added (Rate & Cull, Face Review, Tag Manager, GPS Manager, Workflows) were
+  a touch smaller than the ones in the built-in screens like Manage People
+  and Albums. They're now the same size everywhere, so nothing looks
+  slightly shrunk when you move between screens.
+- Rate & Cull's own **control-size selector** (the three A's in the header)
+  still lets you go bigger — "Normal" is now the standard app size, with
+  Large and Extra-large above it for big screens, TVs, or tired eyes.
+
 ## v0.30.6 — 2026-07-16
 
 Workflows can now ask much more precise questions — "any of these" instead
