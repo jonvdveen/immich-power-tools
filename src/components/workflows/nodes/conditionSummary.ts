@@ -70,7 +70,8 @@ export function formatConditionSummary(c: ICondition): string {
     case "geo_radius": {
       if (c.lat != null && c.lng != null) {
         const dir = c.match === "outside" ? "outside" : "inside";
-        return `${label} ${dir}: ${c.lat}, ${c.lng} (${c.radiusKm || "?"}km)`;
+        const where = c.placeName || `${c.lat}, ${c.lng}`;
+        return `${label} ${dir}: ${where} (${c.radiusKm || "?"}km)`;
       }
       return label;
     }

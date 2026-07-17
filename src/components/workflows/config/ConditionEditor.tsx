@@ -8,6 +8,8 @@ import { Plus, X, Check, Tag } from "lucide-react";
 import { listPeople } from "@/handlers/api/people.handler";
 import { listTags, ITag } from "@/handlers/api/tag.handler";
 import { listAlbums } from "@/handlers/api/album.handler";
+import LocationSearchBox from "@/components/location-manager/LocationSearchBox";
+import { formatCoordinates, parseCoordinates } from "@/lib/location-manager/coordinates";
 import { IAlbum } from "@/types/album";
 import { IPerson } from "@/types/person";
 import { PERSON_THUBNAIL_PATH } from "@/config/routes";
@@ -98,6 +100,63 @@ function AlbumSelect({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** One point, entered the way people actually have coordinates: search for a
+ *  place by name, or paste a single "lat, lng" string straight out of Google
+ *  Maps. parseCoordinates (shared with GPS Manager) also accepts degree
+ *  notation and DMS, so almost anything pasted in works. */
+function GeoPointInput({
+  condition,
+  onChange,
+}: {
+  condition: ICondition;
+  onChange: (c: ICondition) => void;
+}) {
+  const hasPoint = Number.isFinite(condition.lat) && Number.isFinite(condition.lng);
+  // Free text is local so typing is never fought by a reformat mid-keystroke;
+  // it's only overwritten when the search box sets a place.
+  const [raw, setRaw] = useState(hasPoint ? formatCoordinates({ lat: condition.lat, lng: condition.lng }) : "");
+  const [invalid, setInvalid] = useState(false);
+
+  const commit = (text: string) => {
+    setRaw(text);
+    if (!text.trim()) {
+      setInvalid(false);
+      onChange({ ...condition, lat: undefined, lng: undefined, placeName: undefined });
+      return;
+    }
+    const parsed = parseCoordinates(text);
+    if (!parsed) {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false);
+    onChange({ ...condition, lat: parsed.lat, lng: parsed.lng, placeName: undefined });
+  };
+
+  return (
+    <div className="space-y-1">
+      <LocationSearchBox
+        onSelect={(r) => {
+          setRaw(formatCoordinates({ lat: r.lat, lng: r.lng }));
+          setInvalid(false);
+          onChange({ ...condition, lat: r.lat, lng: r.lng, placeName: r.name });
+        }}
+      />
+      <Input
+        className={cn("h-7 text-xs", invalid && "border-destructive focus-visible:ring-destructive")}
+        placeholder="…or paste coordinates: 53.5461, -113.4938"
+        value={raw}
+        onChange={(e) => commit(e.target.value)}
+      />
+      {invalid ? (
+        <p className="text-[10px] text-destructive">Couldn&apos;t read that as coordinates.</p>
+      ) : condition.placeName ? (
+        <p className="text-[10px] text-muted-foreground truncate">📍 {condition.placeName}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -490,10 +549,7 @@ function ConditionFields({ condition, onChange }: { condition: ICondition; onCha
               <SelectItem value="outside">Outside radius</SelectItem>
             </SelectContent>
           </Select>
-          <div className="flex gap-2">
-            <Input className="h-7 text-xs" type="number" step="any" placeholder="Latitude" value={condition.lat ?? ""} onChange={(e) => onChange({ ...condition, lat: parseFloat(e.target.value) || 0 })} />
-            <Input className="h-7 text-xs" type="number" step="any" placeholder="Longitude" value={condition.lng ?? ""} onChange={(e) => onChange({ ...condition, lng: parseFloat(e.target.value) || 0 })} />
-          </div>
+          <GeoPointInput condition={condition} onChange={onChange} />
           <div className="flex items-center gap-1">
             <Input className="h-7 text-xs w-20" type="number" min={1} placeholder="Radius" value={condition.radiusKm ?? ""} onChange={(e) => onChange({ ...condition, radiusKm: parseFloat(e.target.value) || 0 })} />
             <span className="text-xs text-muted-foreground">km</span>
