@@ -7,6 +7,26 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.32.0 — 2026-07-17
+
+GPS Manager now pages through your photos instead of piling them all onto one
+screen, and the "next without GPS" button can carry you across those pages.
+
+- **Changed:** the photo grid is now **paginated** — a "Previous / Next" pair
+  at the bottom with a "201–400 of 32,000 · page 2 of 160" readout — instead
+  of an ever-growing "Load more" list. Before, working through a big library
+  meant loading thousands of photos onto one page until the browser bogged
+  down; now only one page is on screen at a time, so it stays fast no matter
+  how many photos need locations.
+- **Changed:** the **"next photo without GPS"** arrows (next to "All on map")
+  now **jump to a different page when they need to.** Reach the last
+  un-located photo on the page and the next arrow flips you straight to the
+  first one on the following page — so you can sit and geotag your way through
+  the whole library without ever touching the page buttons. It loads the next
+  page ahead of time so the jump feels instant, stops cleanly at the ends, and
+  after you set a location it slides the following photos up so you keep
+  working the front of the queue.
+
 ## v0.31.0 — 2026-07-17
 
 Rate & Cull polish, and a tidy-up so the controls in the tools we've added
