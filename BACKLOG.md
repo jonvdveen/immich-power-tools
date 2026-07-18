@@ -21,11 +21,41 @@ upstream CI green on the first ones.
 - **#309/#310/#311/#312** Face Review — engine / read API / write API / UI
   (a linear stack, review in order).
 
-Follow-ups when the maintainer engages: the two immich-proxy thumbnail
-cache-header tweaks and the FloatingBar sidebar-centering fix were left out of
-the module PRs (general polish, not required by any module) — offer if
-wanted. Note upstream tracks a stale `package-lock.json` (they build with
-bun); left untouched.
+Since 2026-07-17 the rest of the fork is also upstream: **#315** (workflow
+`workflow_processed_assets` growth), **#316** (geo-radius true distance —
+superseded by #322), **#317** (workflow `result` storage), **#318** (thumbnail
+proxy cache headers), **#319** (Manage People hide-hidden default), **#320**
+(FloatingBar centering), **#321** (album picker alpha sort), **#322** (workflow
+ALL/ANY + Album condition + node delete + geo inside/outside). The fork's base
+was resynced onto current `prerelease` on 2026-07-17 (merge `ea75000`, adopted
+onto `local-stack`).
+
+## QUEUED upstream follow-ups (gated on other PRs merging)
+
+Two pieces are prepared but **not yet submitted** because they depend on
+still-open PRs landing in `prerelease` first. Submit each when its gate opens
+(cherry-pick the ref onto a fresh branch off current `prerelease`, `tsc`-clean,
+push, open PR):
+
+- **Geo-Radius point picker** — ref `dcd2353` (place-search / paste-a-pair
+  input for the geo condition, replacing the raw lat/lng boxes). **Gated on
+  BOTH #308 and #322**: it imports `@/components/location-manager/LocationSearchBox`
+  and `@/lib/location-manager/coordinates` (arrive with **#308** GPS Manager),
+  and it edits the geo condition UI that **#322** introduces. Cherry-picking it
+  before #308 fails `tsc` with 3 module-not-found/any errors (verified
+  2026-07-17).
+- **Workflow config-panel sizing** — the `h-8`→`h-9` changes on
+  `ActionConfig.tsx`, `TriggerConfig.tsx`, `[id].tsx` (from `9ff8544`, the
+  v0.31.0 sweep). prerelease still has `h-8` there (8 occurrences). **Gated on
+  #322 (+#317)**, not #308 — those PRs touch `[id].tsx` (node delete /
+  result-count), so wait for them to avoid a conflict, then apply the mechanical
+  `h-8`→`h-9` (protecting `h-8 w-8`) to the three files.
+
+A scheduled watcher (Claude routine) polls the gate PRs and submits each
+follow-up when unblocked; delete this note once both are open.
+
+Note upstream tracks a stale `package-lock.json` (they build with bun); left
+untouched.
 
 ## Rate & Cull (photo rating/culling tool, `/assets/cull`; renamed from "Cull Photos" in v0.24.3)
 
