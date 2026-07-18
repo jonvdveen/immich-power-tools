@@ -7,6 +7,31 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.32.1 — 2026-07-17
+
+Some layout tidying in the GPS Manager toolbar, plus a behind-the-scenes fix
+that shrank the app's own database.
+
+### GPS Manager
+
+- **Changed:** the toolbar above the photos was rearranged. The
+  next / previous "photo without GPS" arrows now sit on the **far left**; the
+  map toggle — renamed from "All on map" to **"Show all on map"** — sits on the
+  **far right**; and **Select all / Deselect all** moved up next to the arrows
+  and are now **visible all the time** (greyed out when there's nothing to do)
+  instead of only appearing once you'd selected something. The selected-count
+  and the copy/paste + coordinate controls follow along to their right.
+- **Changed:** the coordinate box is now labelled **"Image GPS"**, and the
+  **"Add favourite"** button is now **"Create Favourite"**.
+
+### Workflows
+
+- **Fixed:** every workflow run was saving the full list of every photo it
+  touched — twice — into the app's database, which had quietly grown past a
+  gigabyte after 885 runs. Runs now keep just a small sample of ids plus a
+  total count, which is all the run view ever displays. With a one-off
+  cleanup, the database dropped from 1.3 GB to 38 MB. Nothing for you to do.
+
 ## v0.32.0 — 2026-07-17
 
 GPS Manager now pages through your photos instead of piling them all onto one
