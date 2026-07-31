@@ -163,6 +163,27 @@ untouched.
   forced. Hit this in the wild on 3 tags (`2010 Holland & Germany`,
   `2019 Ontario`, `2009 Honeymoon in Florida & Bahamas`) — user is cleaning up
   the existing duplicates by hand.
+- **TODO — submit upstream with the above (#306): delete-that-stays-deleted.**
+  Same root cause, second symptom. `deleteTag` proxied straight to Immich's
+  `DELETE /tags/{id}`, which drops the tag row and cascades `tag_asset` but
+  emits no event — so it leaves the name in **both** `asset_exif.tags` and the
+  photo's XMP `TagsList`. `MetadataService.applyTagList` reads
+  `asset_exif.tags` (via `getForMetadataExtractionTags`), i.e. the DB column,
+  *not* the file — so a deleted tag reappears on the next metadata pass without
+  the sidecar even being re-read. Confirmed live: after deleting the flat
+  `2010 Holland & Germany` in Immich's own UI the tag row was gone while
+  `asset_exif.tags` and the `.xmp` both still held the name, sidecar mtime
+  unchanged. Immich behaves the same way, so matching Immich was not an option.
+  Fix: new `lib/tag-manager/remove.ts` untags every photo first
+  (`DELETE /tags/{id}/assets` → `removeAssets` → `updateTags` rewrites
+  `asset_exif.tags` + `AssetUntag` → `SidecarWrite` rewrites the `.xmp`), then
+  deletes the tag. New route `pages/api/tags/[id]/index.ts` (DELETE);
+  `deleteTag` points at it instead of the proxy. Shared plumbing for both
+  operations extracted to `lib/tag-manager/immich.ts`. Delete confirm dialog now
+  says the sidecars get updated — it writes one file per photo, so it must not
+  be a surprise. Note Immich's "Sidecar Metadata" job only queues `SidecarCheck`
+  (**read**); there is no official job that rewrites sidecars, so a tag change
+  is the only lever.
 - Released in v0.24.2 (2026-07-07): tag names were getting cut off — the
   name span had no `min-w-0`, so Tailwind's `truncate` never actually
   engaged (flex items don't shrink below content size by default). Fixed,

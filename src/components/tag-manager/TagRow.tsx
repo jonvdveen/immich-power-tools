@@ -174,8 +174,8 @@ export default function TagRow({
           title={`Delete "${leafOf(tag.value)}"?`}
           description={
             descendantCount > 0
-              ? `This tag has ${descendantCount} sub-tag${descendantCount === 1 ? "" : "s"} and is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. Deleting it deletes the sub-tags too (Immich cascades this). Photos themselves are never touched, only the tag. This can't be undone.`
-              : `This tag is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. Photos themselves are never touched, only the tag. This can't be undone.`
+              ? `This tag has ${descendantCount} sub-tag${descendantCount === 1 ? "" : "s"} and is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. Deleting it deletes the sub-tags too (Immich cascades this). The photos themselves stay put, but the tag is removed from each one first — otherwise Immich brings it back on its next metadata pass. That updates each photo's XMP sidecar. This can't be undone.`
+              : `This tag is on ${tag.assetCount.toLocaleString()} photo${tag.assetCount === 1 ? "" : "s"}. The photos themselves stay put, but the tag is removed from each one first — otherwise Immich brings it back on its next metadata pass. That updates each photo's XMP sidecar. This can't be undone.`
           }
           onConfirm={() => actions.onDelete(tag)}
         />

@@ -1,9 +1,16 @@
 import { sql } from "drizzle-orm";
 
 import { db } from "@/config/db";
-import { ENV } from "@/config/environment";
-import { getUserHeaders } from "@/helpers/user.helper";
 import { IUser } from "@/types/user";
+
+import {
+  API_BATCH_SIZE,
+  fetchAssetIds,
+  fetchSubtree,
+  immichFetch,
+  SubtreeNode,
+  withRetry,
+} from "./immich";
 
 /**
  * Rename / nest / un-nest a tag (and, if it has any, its whole sub-tree).
@@ -26,73 +33,6 @@ import { IUser } from "@/types/user";
  * A moved/renamed tag gets a new id as a side effect; everything visible
  * (name, position, tagged photos) comes out correct.
  */
-
-const API_BATCH_SIZE = 1000;
-const API_RETRIES = 3;
-
-/** Retry a call a few times. Only used for re-tagging, which runs after the old
- * tag is gone and is therefore the one step where giving up loses information. */
-async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= API_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      if (attempt < API_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
-      }
-    }
-  }
-  throw lastError;
-}
-
-interface SubtreeNode {
-  id: string;
-  value: string;
-  parentId: string | null;
-  color: string | null;
-}
-
-async function immichFetch(path: string, method: string, body: any, user: IUser): Promise<any> {
-  const res = await fetch(`${ENV.IMMICH_URL}/api${path}`, {
-    method,
-    headers: getUserHeaders(user),
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Immich API error ${res.status} on ${method} ${path}: ${text}`);
-  }
-  const contentType = res.headers.get("content-type");
-  return contentType?.includes("application/json") ? res.json() : null;
-}
-
-async function fetchSubtree(rootId: string, ownerId: string): Promise<SubtreeNode[]> {
-  const { rows } = await db.execute(sql`
-    WITH RECURSIVE subtree AS (
-      SELECT id::text, value, "parentId"::text AS "parentId", color
-        FROM "tag"
-       WHERE id = ${rootId} AND "userId" = ${ownerId}
-      UNION ALL
-      SELECT t.id::text, t.value, t."parentId"::text AS "parentId", t.color
-        FROM "tag" t
-        JOIN subtree s ON t."parentId"::text = s.id
-    )
-    SELECT * FROM subtree
-  `);
-  return rows as unknown as SubtreeNode[];
-}
-
-async function fetchAssetIds(tagId: string, ownerId: string): Promise<string[]> {
-  const { rows } = await db.execute(sql`
-    SELECT ta."assetId"::text AS "assetId"
-      FROM "tag_asset" ta
-      JOIN "asset" a ON a.id = ta."assetId" AND a."ownerId" = ${ownerId} AND a."deletedAt" IS NULL
-     WHERE ta."tagId" = ${tagId}
-  `);
-  return (rows as any[]).map((r) => r.assetId);
-}
 
 const leafOf = (value: string) => value.slice(value.lastIndexOf("/") + 1);
 
@@ -225,13 +165,17 @@ export async function moveTag({
     }
     // Past the delete the new tree is the only place these assets belong, so
     // tearing it down would throw away the move entirely. Leave it standing and
-    // say what's missing. Nothing is lost for good: the photos' sidecars still
-    // hold the original keywords, so Immich's metadata re-scan can rebuild
-    // whatever didn't get re-tagged.
+    // say what's missing. Photos that were missed are recoverable but only to
+    // their *old* state: their sidecars still hold the original keyword, and
+    // Immich's "Sidecar Metadata" job reads sidecars (it queues SidecarCheck,
+    // never SidecarWrite), so running it re-creates the tag this move was
+    // getting rid of. It is a way back, not a way forward.
     throw new Error(
-      `The tag was moved to "${rootNewName}" but re-tagging its photos failed partway: ` +
-        `${error?.message ?? error}. The new tag exists — re-run the move, or run Immich's ` +
-        `"Sidecar Metadata" job over these photos, to finish re-applying it.`
+      `Moved the tag to "${rootNewName}", but re-tagging its photos failed partway: ` +
+        `${error?.message ?? error}. The new tag exists and kept whatever was re-tagged before ` +
+        `the failure — add the rest to it to finish. Photos that were missed still carry the old ` +
+        `keyword in their XMP sidecar, so Immich's "Sidecar Metadata" job would bring the OLD tag ` +
+        `back for them rather than complete this move.`
     );
   }
 }

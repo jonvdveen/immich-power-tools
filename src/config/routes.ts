@@ -16,6 +16,7 @@ export const TAG_ASSETS_PATH = (tagId: string) => BASE_PROXY_ENDPOINT + "/tags/"
 // Single-tag delete/color-update (proxied) and rename/nest/un-nest (this
 // app's own endpoint — see lib/tag-manager/move.ts for why).
 export const TAG_PATH = (tagId: string) => BASE_PROXY_ENDPOINT + "/tags/" + tagId;
+export const DELETE_TAG_PATH = (tagId: string) => BASE_API_ENDPOINT + "/tags/" + tagId;
 export const MOVE_TAG_PATH = (tagId: string) => BASE_API_ENDPOINT + "/tags/" + tagId + "/move";
 export const SEARCH_PEOPLE_PATH = BASE_PROXY_ENDPOINT + "/search/person";
 export const SIMILAR_FACES_PATH = (id: string) => BASE_API_ENDPOINT + "/people/" + id + "/similar-faces";

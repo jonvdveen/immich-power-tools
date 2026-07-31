@@ -1,4 +1,4 @@
-import { CREATE_OR_GET_TAG_PATH, LIST_TAGS_PATH, MOVE_TAG_PATH, TAG_PATH } from "@/config/routes";
+import { CREATE_OR_GET_TAG_PATH, DELETE_TAG_PATH, LIST_TAGS_PATH, MOVE_TAG_PATH, TAG_PATH } from "@/config/routes";
 import API from "@/lib/api";
 
 export interface ITag {
@@ -16,7 +16,10 @@ export const listTags = (): Promise<{ tags: ITag[] }> => {
 export const createTag = (params: { name: string; parentId?: string; color?: string }): Promise<ITag> =>
   API.post(CREATE_OR_GET_TAG_PATH, params);
 
-export const deleteTag = (id: string): Promise<void> => API.delete(TAG_PATH(id));
+/** Deletes the tag *and* untags its photos first, so Immich cannot resurrect it
+ * from asset_exif.tags / the XMP sidecars — see lib/tag-manager/remove.ts. */
+export const deleteTag = (id: string): Promise<{ tagsDeleted: number; assetsUntagged: number }> =>
+  API.delete(DELETE_TAG_PATH(id));
 
 export const updateTagColor = (id: string, color: string | null): Promise<ITag> =>
   API.patch(TAG_PATH(id), { color });
