@@ -8,24 +8,44 @@ import { IUser } from "@/types/user";
 /**
  * Rename / nest / un-nest a tag (and, if it has any, its whole sub-tree).
  *
- * Immich v3's tag API cannot do either of these directly — verified live
- * against the server: its update endpoint's schema (TagUpdateDto) only
- * accepts `color`; sending a new name or parentId hits a server bug (empty
- * SQL SET clause -> 500). Create, delete, and color updates all work fine.
+ * Immich's tag API cannot do either of these directly — verified live against
+ * the server, and re-verified on v3.1.0: its update endpoint's schema
+ * (TagUpdateDto) still only accepts `color`; sending a new name or parentId
+ * hits a server bug (empty SQL SET clause -> 500). Create, delete, and color
+ * updates all work fine.
  *
  * So this recreates the tag(s) at the new name/location via the *supported*
- * endpoints, copies over which assets were tagged, then deletes the old
- * tag (Immich cascades that delete to any old descendants, their tag_asset
- * rows, and its internal tag_closure rows in one shot). Never touches
- * Immich's database directly for writes — only the reads (which asset ids
- * are on a tag, which tags form the sub-tree) go direct-to-Postgres, same
- * boundary every other module in this app already follows.
+ * endpoints, deletes the old tag (Immich cascades that delete to any old
+ * descendants, their tag_asset rows, and its internal tag_closure rows in one
+ * shot), and only then re-applies the tagging on the new tag(s). That order is
+ * load-bearing — see the comment on the delete below. Never touches Immich's
+ * database directly for writes — only the reads (which asset ids are on a tag,
+ * which tags form the sub-tree) go direct-to-Postgres, same boundary every
+ * other module in this app already follows.
  *
  * A moved/renamed tag gets a new id as a side effect; everything visible
  * (name, position, tagged photos) comes out correct.
  */
 
 const API_BATCH_SIZE = 1000;
+const API_RETRIES = 3;
+
+/** Retry a call a few times. Only used for re-tagging, which runs after the old
+ * tag is gone and is therefore the one step where giving up loses information. */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= API_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < API_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
 
 interface SubtreeNode {
   id: string;
@@ -118,6 +138,15 @@ export async function moveTag({
 
   const createdIds: string[] = [];
   const oldToNew = new Map<string, string>();
+  let oldTreeDeleted = false;
+
+  // Snapshot which assets are on each node up front. The old tree is deleted
+  // before any re-tagging happens (see below), so these ids are the only record
+  // of what has to be re-applied.
+  const assetsByNode = new Map<string, string[]>();
+  for (const node of subtree) {
+    assetsByNode.set(node.id, await fetchAssetIds(node.id, ownerId));
+  }
 
   try {
     // Top-down: a node's new parent must exist before the node is created.
@@ -155,28 +184,54 @@ export async function moveTag({
       frontier = next;
     }
 
-    // Copy asset tagging from each old node onto its new counterpart.
+    // Drop the old tree *before* re-tagging anything onto the new one.
+    //
+    // Immich rewrites an asset's XMP sidecar whenever its tags change:
+    // TagService.addAssets calls updateTags(assetId), which replaces
+    // asset_exif.tags with the asset's current tag values, then emits AssetTag
+    // -> MetadataService queues SidecarWrite -> TagsList is written to the .xmp.
+    // Re-tagging while the old tag still existed would catch each asset on both
+    // the old and the new tag and bake *both* paths into TagsList; Immich's next
+    // metadata pass reads that file back (applyTagList -> upsertTags) and
+    // recreates the very tag the move just got rid of, complete with all its
+    // photos. Deleting a tag emits no event and rewrites no sidecar, so doing it
+    // first leaves the old path with no trace on disk to be resurrected from.
+    await immichFetch(`/tags/${root.id}`, "DELETE", undefined, user);
+    oldTreeDeleted = true;
+
+    // Re-apply the tagging on each new node. This is what triggers the single,
+    // correct sidecar write per asset.
     let assetsCopied = 0;
     for (const node of subtree) {
-      const assetIds = await fetchAssetIds(node.id, ownerId);
+      const assetIds = assetsByNode.get(node.id) ?? [];
       const newId = oldToNew.get(node.id)!;
       for (let i = 0; i < assetIds.length; i += API_BATCH_SIZE) {
         const batch = assetIds.slice(i, i + API_BATCH_SIZE);
-        await immichFetch(`/tags/${newId}/assets`, "PUT", { ids: batch }, user);
+        await withRetry(() => immichFetch(`/tags/${newId}/assets`, "PUT", { ids: batch }, user));
         assetsCopied += batch.length;
       }
     }
 
-    // Only remove the old tree once every new tag + asset link exists.
-    await immichFetch(`/tags/${root.id}`, "DELETE", undefined, user);
-
     return { newId: oldToNew.get(root.id)!, tagsMoved: subtree.length, assetsCopied };
-  } catch (error) {
-    // Best-effort rollback: deleting the new root cascades to any new
-    // children already created, so one call undoes the whole partial tree.
-    if (createdIds.length) {
-      await immichFetch(`/tags/${createdIds[0]}`, "DELETE", undefined, user).catch(() => {});
+  } catch (error: any) {
+    if (!oldTreeDeleted) {
+      // The old tree is still intact, so the clean undo is to drop the new one.
+      // Deleting the new root cascades to any children already created, so one
+      // call takes down the whole partial tree.
+      if (createdIds.length) {
+        await immichFetch(`/tags/${createdIds[0]}`, "DELETE", undefined, user).catch(() => {});
+      }
+      throw error;
     }
-    throw error;
+    // Past the delete the new tree is the only place these assets belong, so
+    // tearing it down would throw away the move entirely. Leave it standing and
+    // say what's missing. Nothing is lost for good: the photos' sidecars still
+    // hold the original keywords, so Immich's metadata re-scan can rebuild
+    // whatever didn't get re-tagged.
+    throw new Error(
+      `The tag was moved to "${rootNewName}" but re-tagging its photos failed partway: ` +
+        `${error?.message ?? error}. The new tag exists — re-run the move, or run Immich's ` +
+        `"Sidecar Metadata" job over these photos, to finish re-applying it.`
+    );
   }
 }

@@ -143,6 +143,26 @@ untouched.
     "?" help dialog documents it.
   - Per-row "view in Immich" link uses `{exImmichUrl}/tags?path=<value>`,
     reverse-engineered from Immich's own web bundle (not in any public API).
+- **TODO — submit upstream: fold into #306** (Tag Manager PR, still open, so
+  this belongs as another commit on that branch, not a standalone PR). Fixed
+  locally 2026-07-31, deployed to the local stack, **not yet pushed anywhere**.
+  Moved/renamed tags were coming back from the dead: `move.ts` re-tagged the
+  assets onto the new tag *before* deleting the old one, so for the duration of
+  the copy each photo sat on both tags. Immich rewrites an asset's XMP sidecar
+  on every tag change (`TagService.addAssets` → `updateTags` → `AssetTag` event
+  → `SidecarWrite` job writes `TagsList`), so both the old and new paths got
+  baked into the `.xmp` — and Immich's next metadata pass read that file back
+  (`applyTagList` → `upsertTags`) and recreated the old tag with all its photos.
+  Deleting a tag emits no event and rewrites no sidecar, so the stale keyword
+  was never cleaned off disk. Fix is a reorder: delete the old tree first, then
+  re-apply the tagging, so the one sidecar write per asset sees only the new
+  tag. Asset ids are now snapshotted before any write, the re-tag step retries,
+  and the rollback is order-aware (past the delete it keeps the new tree rather
+  than tearing it down). Re-verified on Immich **v3.1.0** that `TagUpdateDto`
+  still only accepts `color`, so the recreate-and-delete approach is still
+  forced. Hit this in the wild on 3 tags (`2010 Holland & Germany`,
+  `2019 Ontario`, `2009 Honeymoon in Florida & Bahamas`) — user is cleaning up
+  the existing duplicates by hand.
 - Released in v0.24.2 (2026-07-07): tag names were getting cut off — the
   name span had no `min-w-0`, so Tailwind's `truncate` never actually
   engaged (flex items don't shrink below content size by default). Fixed,
