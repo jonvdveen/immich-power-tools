@@ -7,6 +7,48 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.33.0 — 2026-07-31
+
+Tags you move or delete now stay moved and deleted, and a workflow's "Album"
+condition can check several albums at once.
+
+### Tag Manager
+
+- **Fixed:** nesting or renaming a tag could leave a duplicate behind at the
+  old spot, which then quietly filled back up with the same photos. Immich
+  keeps a copy of each photo's tag names inside the photo's own sidecar file,
+  and during a move the photos briefly carried both the old and the new name —
+  so both got written to those files, and Immich later read the old one back
+  and recreated the tag you'd just moved away from. Moves now clear the old tag
+  before applying the new one, so only the new name is ever written down.
+
+- **Fixed:** deleting a tag didn't always stick. Immich removes the tag itself
+  but leaves its name recorded against each photo, so the tag reappeared the
+  next time Immich re-read that information — sometimes days later, which made
+  it look random. Deleting now takes the tag off every photo first, which
+  clears the name properly, and only then removes the tag. Because that updates
+  each photo's sidecar file, the confirmation dialog now says so up front
+  instead of promising the photos aren't touched.
+
+  This doesn't retroactively clean up tags you deleted before this release —
+  those can still reappear, and you'll need to delete them once more now that
+  the button works properly.
+
+### Workflows
+
+- **Added:** the **Album** condition now takes **several albums at once**
+  instead of one. Pick as many as you like from a searchable list, then choose
+  whether a photo has to be in **any of** them, in **all of** them, or in
+  **none of** them. Previously "in this album or that one" meant building three
+  separate conditions.
+
+  Worth knowing: **"is in none of"** only rules out the albums you picked — a
+  photo that's in some other album still passes. If you want photos that aren't
+  in *any* album at all, that's the separate **"Not in Any Album"** condition.
+  There's now a note in the editor saying so.
+
+  Workflows you've already built keep working exactly as before.
+
 ## v0.32.1 — 2026-07-17
 
 Some layout tidying in the GPS Manager toolbar, plus a behind-the-scenes fix
