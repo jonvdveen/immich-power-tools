@@ -153,9 +153,17 @@ export function formatConditionSummary(c: ICondition): string {
     case "not_in_album":
       return label;
     case "album": {
-      const dir = c.match === "not_in" ? "not in" : "in";
-      const name = c.albumName || c.albumId;
-      return name ? `${label} ${dir}: ${name}` : `${label}: (none selected)`;
+      // `albumNames` is the multi-select form; `albumName` is what conditions
+      // saved before it existed still carry.
+      const names: string[] = c.albumNames?.length
+        ? c.albumNames
+        : c.albumName
+          ? [c.albumName]
+          : [];
+      const dir = c.match === "in_all" ? "in all of" : c.match === "not_in" ? "in none of" : "in";
+      if (!names.length) return `${label}: (none selected)`;
+      const nameStr = names.length <= 2 ? names.join(", ") : `${names[0]}, ${names[1]} +${names.length - 2}`;
+      return `${label} ${dir}: ${nameStr}`;
     }
     case "not_in_specific_album": {
       const name = c.albumName || c.albumId;

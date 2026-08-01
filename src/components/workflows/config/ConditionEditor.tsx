@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ICondition, ConditionType, IConditionMatch } from "@/types/workflow";
-import { Plus, X, Check, Tag } from "lucide-react";
+import { Plus, X, Check, Tag, Images } from "lucide-react";
 import { listPeople } from "@/handlers/api/people.handler";
 import { listTags, ITag } from "@/handlers/api/tag.handler";
 import { listAlbums } from "@/handlers/api/album.handler";
@@ -238,6 +238,95 @@ function PersonPicker({ selectedIds, onChange }: PersonPickerProps) {
                     <img src={PERSON_THUBNAIL_PATH(person.id)} alt="" className="h-6 w-6 rounded-full object-cover" />
                     <span className="text-xs truncate flex-1">{person.name || "Unknown"}</span>
                     <Check className={cn("h-3 w-3", selectedSet.has(person.id) ? "opacity-100" : "opacity-0")} />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+interface AlbumMultiPickerProps {
+  selectedIds: string[];
+  onChange: (albumIds: string[], albumNames: string[]) => void;
+}
+
+/** Multi-album chooser, same shape as the person/tag pickers so the album
+ *  condition can match several albums at once. Names ride along with the ids
+ *  so the node summary can read them back without re-fetching. */
+function AlbumMultiPicker({ selectedIds, onChange }: AlbumMultiPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [albums, setAlbums] = useState<IAlbum[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    listAlbums({ sortBy: "albumName", sortOrder: "asc", includeShared: true })
+      .then((res) => setAlbums(res || []))
+      .catch(() => setAlbums([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const selectedSet = new Set(selectedIds || []);
+  const selectedAlbums = albums.filter((a) => selectedSet.has(a.id));
+
+  const toggleAlbum = (album: IAlbum) => {
+    const next = selectedSet.has(album.id)
+      ? selectedAlbums.filter((a) => a.id !== album.id)
+      : [...selectedAlbums, album];
+    onChange(next.map((a) => a.id), next.map((a) => a.albumName));
+  };
+
+  return (
+    <div className="space-y-2">
+      {/* Selected album chips */}
+      {selectedAlbums.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {selectedAlbums.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => toggleAlbum(a)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted hover:bg-destructive/10 transition-colors group"
+            >
+              <Images className="h-2.5 w-2.5" />
+              <span className="text-[10px] font-medium">{a.albumName}</span>
+              <X className="h-2.5 w-2.5 text-muted-foreground group-hover:text-destructive" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Picker */}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" className="flex items-center gap-2 h-7 px-2 w-full border rounded text-xs bg-background hover:bg-muted transition-colors">
+            <span className="text-muted-foreground">
+              {selectedIds.length === 0 ? "Select albums..." : "Add more..."}
+            </span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-56 p-0 z-[10000]" align="start">
+          <Command>
+            <CommandInput placeholder="Search albums..." className="text-xs" />
+            <CommandList>
+              <CommandEmpty>{loading ? "Loading..." : "No albums found."}</CommandEmpty>
+              <CommandGroup>
+                {albums.map((album) => (
+                  <CommandItem
+                    key={album.id}
+                    value={album.albumName}
+                    onSelect={() => toggleAlbum(album)}
+                    className="flex items-center gap-2"
+                  >
+                    <span className="text-xs truncate flex-1">
+                      {album.albumName}
+                      {typeof album.assetCount === "number" ? ` (${album.assetCount})` : ""}
+                    </span>
+                    <Check className={cn("h-3 w-3", selectedSet.has(album.id) ? "opacity-100" : "opacity-0")} />
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -561,15 +650,27 @@ function ConditionFields({ condition, onChange }: { condition: ICondition; onCha
       );
     case "album":
       return (
-        <div className="space-y-1">
+        <div className="space-y-2">
           <Select value={condition.match || "in"} onValueChange={(v) => onChange({ ...condition, match: v })}>
             <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="in">Is in album</SelectItem>
-              <SelectItem value="not_in">Is not in album</SelectItem>
+              <SelectItem value="in">Is in any of</SelectItem>
+              <SelectItem value="in_all">Is in all of</SelectItem>
+              <SelectItem value="not_in">Is in none of</SelectItem>
             </SelectContent>
           </Select>
-          <AlbumSelect value={condition.albumId} onChange={(albumId, albumName) => onChange({ ...condition, albumId, albumName })} />
+          <AlbumMultiPicker
+            selectedIds={condition.albumIds || (condition.albumId ? [condition.albumId] : [])}
+            onChange={(albumIds, albumNames) =>
+              // Drop the single-album keys once it's been re-picked, so the two
+              // shapes can't drift apart on an old condition that gets edited.
+              onChange({ ...condition, albumIds, albumNames, albumId: undefined, albumName: undefined })
+            }
+          />
+          <p className="text-[10px] text-muted-foreground">
+            &quot;Is in none of&quot; only excludes the albums you pick — a photo in some other
+            album still matches. Use &quot;Not in Any Album&quot; for photos in no album at all.
+          </p>
         </div>
       );
     case "day_of_week":

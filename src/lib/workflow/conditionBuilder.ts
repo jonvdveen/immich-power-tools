@@ -245,10 +245,34 @@ function buildSingleCondition(c: ICondition): SQL | undefined {
       return sql`NOT EXISTS (SELECT 1 FROM "album_asset" aa WHERE aa."assetId" = ${assets.id} AND aa."albumId" = ${c.albumId})`;
 
     case "album": {
-      if (!c.albumId) return undefined;
-      return c.match === "not_in"
-        ? sql`NOT EXISTS (SELECT 1 FROM "album_asset" aa WHERE aa."assetId" = ${assets.id} AND aa."albumId" = ${c.albumId})`
-        : sql`EXISTS (SELECT 1 FROM "album_asset" aa WHERE aa."assetId" = ${assets.id} AND aa."albumId" = ${c.albumId})`;
+      // `albumIds` is the multi-select form; `albumId` is what single-album
+      // conditions saved before it existed still carry.
+      const albumIds: string[] = c.albumIds?.length
+        ? c.albumIds
+        : c.albumId
+          ? [c.albumId]
+          : [];
+      if (!albumIds.length) return undefined;
+
+      if (c.match === "in_all") {
+        // Asset must be in EVERY one of these albums.
+        const checks = albumIds.map((aid: string) =>
+          sql`EXISTS (SELECT 1 FROM "album_asset" aa WHERE aa."assetId" = ${assets.id} AND aa."albumId" = ${aid})`
+        );
+        return and(...checks)!;
+      }
+
+      const idParams = sql.join(albumIds.map((id: string) => sql`${id}`), sql`, `);
+
+      // "not_in" — in none of them. Note this is per-album: an asset in some
+      // other album still matches. "Not in Any Album" is its own condition.
+      if (c.match === "not_in") {
+        return sql`NOT EXISTS (SELECT 1 FROM "album_asset" aa WHERE aa."assetId" = ${assets.id} AND aa."albumId" IN (${idParams}))`;
+      }
+
+      // "in" (default, and what older single-album conditions saved) — in at
+      // least one of them.
+      return sql`EXISTS (SELECT 1 FROM "album_asset" aa WHERE aa."assetId" = ${assets.id} AND aa."albumId" IN (${idParams}))`;
     }
 
     case "geo_radius": {
