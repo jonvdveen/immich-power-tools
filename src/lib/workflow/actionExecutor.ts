@@ -6,9 +6,11 @@ import { exif } from "@/schema";
 import { assets } from "@/schema/assets.schema";
 import { person } from "@/schema/person.schema";
 import { assetFaces } from "@/schema/assetFaces.schema";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { albumsAssetsAssets } from "@/schema/albumAssetsAssets.schema";
+import { eq, and, inArray, desc, isNull, sql } from "drizzle-orm";
 import { IUser } from "@/types/user";
 import { getUserHeaders } from "@/helpers/user.helper";
+import { isSyncAction } from "@/config/constants/workflow";
 
 export const WORKFLOW_API_KEY_SETTING = "workflow_api_key";
 
@@ -18,6 +20,92 @@ interface ActionResult {
   albumId?: string;
   albumName?: string;
   error?: string;
+  /** Sync actions only — the two halves of the reconcile, so a run can report
+   *  "12 added, 3 removed" instead of a single opaque total. */
+  added?: number;
+  removed?: number;
+}
+
+/** Assets currently in a container, restricted to the same slice of the library
+ *  the trigger draws from (the owner's active, non-trashed, timeline assets).
+ *  Without that restriction a sync action would strip out archived or trashed
+ *  photos that the run never evaluated in the first place. */
+const syncScope = (ownerId: string) => [
+  eq(assets.ownerId, ownerId),
+  eq(assets.visibility, "timeline"),
+  eq(assets.status, "active"),
+  isNull(assets.deletedAt),
+];
+
+async function currentAlbumMembers(albumId: string, ownerId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: albumsAssetsAssets.assetId })
+    .from(albumsAssetsAssets)
+    .innerJoin(assets, eq(assets.id, albumsAssetsAssets.assetId))
+    .where(and(eq(albumsAssetsAssets.albumId, albumId), ...syncScope(ownerId)));
+  return rows.map((r) => r.id);
+}
+
+async function currentTagMembers(tagId: string, ownerId: string): Promise<string[]> {
+  const { rows } = await db.execute(sql`
+    SELECT ta."assetId"::text AS id
+      FROM "tag_asset" ta
+      JOIN "asset" a ON a.id = ta."assetId"
+     WHERE ta."tagId" = ${tagId}
+       AND a."ownerId" = ${ownerId}
+       AND a.visibility = 'timeline'
+       AND a.status = 'active'
+       AND a."deletedAt" IS NULL
+  `);
+  return (rows as any[]).map((r) => r.id);
+}
+
+/** Create-or-get a tag by name. Immich's POST /tags rejects a duplicate with a
+ *  400, so the upsert endpoint (PUT /tags) is the one that's safe to call when
+ *  the tag may already exist. */
+async function upsertTagByName(name: string, user: IUser): Promise<{ id: string } | undefined> {
+  const created = await immichFetch("/tags", "PUT", { tags: [name] }, user);
+  return Array.isArray(created) ? created[0] : created;
+}
+
+function diff(desired: string[], current: string[]) {
+  // Dedupe both sides: two branches of the graph can deliver the same asset to
+  // one action, and we don't want the id twice in a request body.
+  const desiredSet = new Set(desired);
+  const currentSet = new Set(current);
+  return {
+    toAdd: [...desiredSet].filter((id) => !currentSet.has(id)),
+    toRemove: [...currentSet].filter((id) => !desiredSet.has(id)),
+  };
+}
+
+/** Read-only version of a sync action, for the canvas dry run — reports what
+ *  would change without touching anything. */
+export async function previewSyncAction(
+  subType: string,
+  config: any,
+  assetIds: string[],
+  user: IUser
+): Promise<{ toAdd: number; toRemove: number } | null> {
+  try {
+    if (subType === "update_album") {
+      if (!config.albumId) return null;
+      const { toAdd, toRemove } = diff(assetIds, await currentAlbumMembers(config.albumId, user.id));
+      return { toAdd: toAdd.length, toRemove: toRemove.length };
+    }
+    if (subType === "update_tag") {
+      if (!config.tagName) return null;
+      const tags = await immichFetch("/tags", "GET", undefined, user);
+      const tag = Array.isArray(tags) ? tags.find((t: any) => t.value === config.tagName) : undefined;
+      // Tag doesn't exist yet — everything matching would be added, nothing removed.
+      if (!tag) return { toAdd: assetIds.length, toRemove: 0 };
+      const { toAdd, toRemove } = diff(assetIds, await currentTagMembers(tag.id, user.id));
+      return { toAdd: toAdd.length, toRemove: toRemove.length };
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 async function getWorkflowApiKey(ownerId: string): Promise<string | null> {
@@ -139,11 +227,54 @@ export async function executeAction(
   assetIds: string[],
   user: IUser
 ): Promise<ActionResult> {
-  if (assetIds.length === 0) {
+  // Sync actions still have work to do with nothing matching — that's the
+  // instruction to empty the container.
+  if (assetIds.length === 0 && !isSyncAction(subType)) {
     return { action: subType, assetsProcessed: 0 };
   }
 
   switch (subType) {
+    case "update_album": {
+      if (!config.albumId) throw new Error("Album ID is required for update_album");
+      const { toAdd, toRemove } = diff(assetIds, await currentAlbumMembers(config.albumId, user.id));
+      if (toAdd.length) {
+        await immichFetchBatched(`/albums/${config.albumId}/assets`, "PUT", toAdd, {}, user);
+      }
+      if (toRemove.length) {
+        await immichFetchBatched(`/albums/${config.albumId}/assets`, "DELETE", toRemove, {}, user);
+      }
+      return {
+        action: "update_album",
+        assetsProcessed: toAdd.length + toRemove.length,
+        albumId: config.albumId,
+        added: toAdd.length,
+        removed: toRemove.length,
+      };
+    }
+
+    case "update_tag": {
+      if (!config.tagName) throw new Error("Tag name is required for update_tag");
+      try {
+        const tag = await upsertTagByName(config.tagName, user);
+        if (!tag?.id) throw new Error(`Could not create or find tag "${config.tagName}"`);
+        const { toAdd, toRemove } = diff(assetIds, await currentTagMembers(tag.id, user.id));
+        if (toAdd.length) {
+          await immichFetchBatched(`/tags/${tag.id}/assets`, "PUT", toAdd, {}, user);
+        }
+        if (toRemove.length) {
+          await immichFetchBatched(`/tags/${tag.id}/assets`, "DELETE", toRemove, {}, user);
+        }
+        return {
+          action: "update_tag",
+          assetsProcessed: toAdd.length + toRemove.length,
+          added: toAdd.length,
+          removed: toRemove.length,
+        };
+      } catch (e: any) {
+        return { action: "update_tag", assetsProcessed: 0, error: e.message };
+      }
+    }
+
     case "create_album": {
       const albumName = await resolveTemplate(config.nameTemplate || "Auto Album", assetIds);
       const album = await immichFetch("/albums", "POST", { albumName, assetIds: assetIds.slice(0, API_BATCH_SIZE) }, user);

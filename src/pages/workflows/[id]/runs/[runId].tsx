@@ -22,7 +22,7 @@ import API from "@/lib/api";
 import { Handle, Position, NodeProps } from "@xyflow/react";
 import {
   FilePlus, FileEdit, Database, GitBranch, GitFork,
-  FolderPlus, FolderInput, FolderMinus, Heart, HeartOff, Archive, Tag,
+  FolderPlus, FolderInput, FolderMinus, FolderSync, Heart, HeartOff, Archive, Tag, Tags as TagsIcon,
 } from "lucide-react";
 
 // ---- Annotated Node Components (read-only, with run data) ----
@@ -134,11 +134,11 @@ function AnnotatedActionNode({ data }: NodeProps) {
   const subType = data.subType as string;
   const step = data.runStep as any;
   const icons: Record<string, any> = {
-    create_album: FolderPlus, add_to_album: FolderInput, remove_from_album: FolderMinus,
+    create_album: FolderPlus, add_to_album: FolderInput, remove_from_album: FolderMinus, update_album: FolderSync, update_tag: TagsIcon,
     favorite: Heart, unfavorite: HeartOff, archive: Archive, tag: Tag, remove_tag: Tag,
   };
   const labels: Record<string, string> = {
-    create_album: "Create Album", add_to_album: "Add to Album", remove_from_album: "Remove from Album",
+    create_album: "Create Album", add_to_album: "Add to Album", remove_from_album: "Remove from Album", update_album: "Update Album", update_tag: "Update Tag",
     favorite: "Favorite", unfavorite: "Unfavorite", archive: "Archive", tag: "Add Tag", remove_tag: "Remove Tag",
   };
   const Icon = icons[subType] || FolderPlus;

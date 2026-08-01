@@ -1,4 +1,4 @@
-import { FilePlus, FileEdit, Database, GitBranch, GitFork, FolderPlus, FolderInput, FolderMinus, Heart, HeartOff, Archive, Tag } from "lucide-react";
+import { FilePlus, FileEdit, Database, GitBranch, GitFork, FolderPlus, FolderInput, FolderMinus, FolderSync, Heart, HeartOff, Archive, Tag, Tags as TagsIcon } from "lucide-react";
 
 interface PaletteItem {
   type: string;
@@ -23,11 +23,13 @@ const actionItems: PaletteItem[] = [
   { type: "action", subType: "create_album", label: "Create Album", icon: FolderPlus, color: "text-purple-500" },
   { type: "action", subType: "add_to_album", label: "Add to Album", icon: FolderInput, color: "text-purple-500" },
   { type: "action", subType: "remove_from_album", label: "Remove from Album", icon: FolderMinus, color: "text-purple-500" },
+  { type: "action", subType: "update_album", label: "Update Album", icon: FolderSync, color: "text-purple-500" },
   { type: "action", subType: "favorite", label: "Favorite", icon: Heart, color: "text-purple-500" },
   { type: "action", subType: "unfavorite", label: "Unfavorite", icon: HeartOff, color: "text-purple-500" },
   { type: "action", subType: "archive", label: "Archive", icon: Archive, color: "text-purple-500" },
   { type: "action", subType: "tag", label: "Add Tag", icon: Tag, color: "text-purple-500" },
   { type: "action", subType: "remove_tag", label: "Remove Tag", icon: Tag, color: "text-purple-500" },
+  { type: "action", subType: "update_tag", label: "Update Tag", icon: TagsIcon, color: "text-purple-500" },
 ];
 
 function PaletteGroup({ title, items }: { title: string; items: PaletteItem[] }) {

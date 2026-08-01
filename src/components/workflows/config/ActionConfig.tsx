@@ -118,7 +118,7 @@ export default function ActionConfig({ subType, config, onChange }: ActionConfig
     );
   }
 
-  if (subType === "add_to_album" || subType === "remove_from_album") {
+  if (subType === "add_to_album" || subType === "remove_from_album" || subType === "update_album") {
     return (
       <div className="space-y-2">
         <Label className="text-xs">Album</Label>
@@ -130,7 +130,7 @@ export default function ActionConfig({ subType, config, onChange }: ActionConfig
     );
   }
 
-  if (subType === "tag" || subType === "remove_tag") {
+  if (subType === "tag" || subType === "remove_tag" || subType === "update_tag") {
     return (
       <div className="space-y-2">
         <Label className="text-xs">Tag Name</Label>

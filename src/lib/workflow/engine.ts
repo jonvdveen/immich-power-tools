@@ -5,7 +5,8 @@ import { assets } from "@/schema/assets.schema";
 import { exif } from "@/schema";
 import { eq, and, desc, gt, gte, isNull, inArray, sql, ne, SQL } from "drizzle-orm";
 import { buildConditions } from "./conditionBuilder";
-import { executeAction } from "./actionExecutor";
+import { executeAction, previewSyncAction } from "./actionExecutor";
+import { isSyncAction, validateWorkflowGraph } from "@/config/constants/workflow";
 import { IUser } from "@/types/user";
 import { randomUUID } from "crypto";
 
@@ -228,6 +229,12 @@ export async function executeWorkflow(
 
     log(runId, `Graph loaded: ${nodes.length} nodes, ${edges.length} edges`);
 
+    // Backstop for the same check the graph save does — the trigger can be
+    // changed after a sync action was added, and this path also covers
+    // scheduled and webhook runs, which never touch the save endpoint.
+    const graphError = validateWorkflowGraph(nodes);
+    if (graphError) throw new Error(graphError);
+
     // Build adjacency map: nodeId -> { handle -> targetNodeId[] }
     const adjacency = new Map<string, Map<string | null, string[]>>();
     for (const edge of edges) {
@@ -396,6 +403,12 @@ export async function executeWorkflow(
 
         log(runId, `ACTION [${node.subType}]: ${actionAssetIds.length} assets${isDebug ? " (DRY RUN)" : ""}`);
 
+        // On a dry run a sync action's interesting number is what it would
+        // *remove*, which the input count doesn't show at all.
+        const syncPreview = isDebug && isSyncAction(node.subType)
+          ? await previewSyncAction(node.subType, config, actionAssetIds, user)
+          : null;
+
         debugSteps.push({
           nodeId: node.id,
           nodeType: "action",
@@ -404,12 +417,21 @@ export async function executeWorkflow(
           inputAssets: actionAssetIds.length,
           outputAssets: {},
           assetIds: actionAssetIds.slice(0, RESULT_ASSET_SAMPLE),
-          detail: isDebug ? `DRY RUN — would process ${actionAssetIds.length} assets` : `Processing ${actionAssetIds.length} assets`,
+          detail: syncPreview
+            ? `DRY RUN — ${actionAssetIds.length} match: would add ${syncPreview.toAdd}, remove ${syncPreview.toRemove}`
+            : isDebug
+              ? `DRY RUN — would process ${actionAssetIds.length} assets`
+              : `Processing ${actionAssetIds.length} assets`,
         });
 
-        if (!isDebug && actionAssetIds.length > 0) {
+        // Sync actions run even with nothing matching — an empty match set is
+        // the instruction to empty the album/tag, not a reason to skip.
+        if (!isDebug && (actionAssetIds.length > 0 || isSyncAction(node.subType))) {
           const actionResult = await executeAction(node.subType, config, actionAssetIds, user);
-          log(runId, `ACTION [${node.subType}] completed: ${actionResult.assetsProcessed} processed${actionResult.albumName ? ` → "${actionResult.albumName}"` : ""}${actionResult.error ? ` ERROR: ${actionResult.error}` : ""}`);
+          const syncDetail = isSyncAction(node.subType)
+            ? ` (${actionResult.added ?? 0} added, ${actionResult.removed ?? 0} removed)`
+            : "";
+          log(runId, `ACTION [${node.subType}] completed: ${actionResult.assetsProcessed} processed${syncDetail}${actionResult.albumName ? ` → "${actionResult.albumName}"` : ""}${actionResult.error ? ` ERROR: ${actionResult.error}` : ""}`);
           result.actions.push({ ...actionResult, assetIds: actionAssetIds.slice(0, RESULT_ASSET_SAMPLE) });
 
           // Record processed assets to prevent reprocessing

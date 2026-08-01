@@ -3,6 +3,7 @@ import { workflows, workflowNodes, workflowEdges } from "@/db/schema/workflows.s
 import { getCurrentUser } from "@/handlers/serverUtils/user.utils";
 import { eq, and } from "drizzle-orm";
 import { NextApiRequest, NextApiResponse } from "next";
+import { validateWorkflowGraph } from "@/config/constants/workflow";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const currentUser = await getCurrentUser(req);
@@ -19,6 +20,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!workflow) return res.status(404).json({ message: "Workflow not found" });
 
   const { nodes, edges, viewport } = req.body;
+
+  const graphError = validateWorkflowGraph(nodes);
+  if (graphError) return res.status(400).json({ message: graphError });
 
   await appDb.delete(workflowEdges).where(eq(workflowEdges.workflowId, id));
   await appDb.delete(workflowNodes).where(eq(workflowNodes.workflowId, id));

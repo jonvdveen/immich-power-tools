@@ -1,9 +1,11 @@
 import { Handle, Position, NodeProps } from "@xyflow/react";
-import { FolderPlus, FolderInput, FolderMinus, Heart, HeartOff, Archive, Tag } from "lucide-react";
+import { FolderPlus, FolderInput, FolderMinus, FolderSync, Heart, HeartOff, Archive, Tag, Tags as TagsIcon } from "lucide-react";
 
 const actionIcons: Record<string, any> = {
   create_album: FolderPlus,
   add_to_album: FolderInput,
+  update_album: FolderSync,
+  update_tag: TagsIcon,
   remove_from_album: FolderMinus,
   favorite: Heart,
   unfavorite: HeartOff,
@@ -15,6 +17,8 @@ const actionIcons: Record<string, any> = {
 const actionLabels: Record<string, string> = {
   create_album: "Create Album",
   add_to_album: "Add to Album",
+  update_album: "Update Album",
+  update_tag: "Update Tag",
   remove_from_album: "Remove from Album",
   favorite: "Favorite",
   unfavorite: "Unfavorite",
@@ -41,7 +45,7 @@ export default function ActionNode({ data, selected }: NodeProps) {
           {subType === "create_album" && config.nameTemplate && (
             <p className="text-[10px] text-muted-foreground truncate max-w-[160px]">{config.nameTemplate}</p>
           )}
-          {(subType === "add_to_album" || subType === "remove_from_album") && config.albumName && (
+          {(subType === "add_to_album" || subType === "remove_from_album" || subType === "update_album") && config.albumName && (
             <p className="text-[10px] text-muted-foreground truncate max-w-[160px]">{config.albumName}</p>
           )}
           {(subType === "tag" || subType === "remove_tag") && config.tagName && (
