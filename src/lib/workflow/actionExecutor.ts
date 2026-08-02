@@ -6,6 +6,7 @@ import { exif } from "@/schema";
 import { assets } from "@/schema/assets.schema";
 import { person } from "@/schema/person.schema";
 import { assetFaces } from "@/schema/assetFaces.schema";
+import { tags } from "@/schema/tags.schema";
 import { albumsAssetsAssets } from "@/schema/albumAssetsAssets.schema";
 import { eq, and, inArray, desc, isNull, sql } from "drizzle-orm";
 import { IUser } from "@/types/user";
@@ -63,18 +64,31 @@ async function currentTagMembers(tagId: string, ownerId: string): Promise<string
 /** Resolve the tag an action is configured with. The tag actions only ever
  *  change which photos carry a tag -- they never create, rename or delete one,
  *  so this looks the tag up and fails loudly if it's gone rather than
- *  conjuring it into existence. */
+ *  conjuring it into existence.
+ *
+ *  Read direct from Postgres rather than GET /tags: this is a read, which is
+ *  the boundary the rest of this module already uses, and it keeps the lookup
+ *  off the workflow API key. Resolving over the API would demand `tag.read` on
+ *  a key that otherwise only needs `tag.asset` to do the actual work. */
 async function resolveTag(config: any, user: IUser): Promise<{ id: string; value: string }> {
-  const tags = await immichFetch("/tags", "GET", undefined, user);
-  const list: any[] = Array.isArray(tags) ? tags : [];
+  const lookup = async (column: "id" | "value", needle: string) => {
+    const [row] = await db
+      .select({ id: tags.id, value: tags.value })
+      .from(tags)
+      .where(and(eq(tags.userId, user.id), eq(column === "id" ? tags.id : tags.value, needle)))
+      .limit(1);
+    return row;
+  };
 
   if (config.tagId) {
-    const byId = list.find((t) => t.id === config.tagId);
-    if (byId) return { id: byId.id, value: byId.value };
+    const byId = await lookup("id", config.tagId);
+    if (byId) return byId;
     // Moving or renaming a tag gives it a new id, so fall back to the path we
     // stored next to it before giving up.
-    const byStoredValue = config.tagValue && list.find((t) => t.value === config.tagValue);
-    if (byStoredValue) return { id: byStoredValue.id, value: byStoredValue.value };
+    if (config.tagValue) {
+      const byStoredValue = await lookup("value", config.tagValue);
+      if (byStoredValue) return byStoredValue;
+    }
     throw new Error(
       `The tag this action points at no longer exists${config.tagValue ? ` ("${config.tagValue}")` : ""}. ` +
       `Open the action and pick a tag again.`
@@ -83,8 +97,8 @@ async function resolveTag(config: any, user: IUser): Promise<{ id: string; value
 
   // Actions saved before the tag picker stored a hand-typed name.
   if (config.tagName) {
-    const byValue = list.find((t) => t.value === config.tagName);
-    if (byValue) return { id: byValue.id, value: byValue.value };
+    const byValue = await lookup("value", config.tagName);
+    if (byValue) return byValue;
     throw new Error(
       `No tag called "${config.tagName}" exists. Open the action and pick an existing tag ` +
       `(these actions no longer create tags -- make it in Tag Manager first).`
