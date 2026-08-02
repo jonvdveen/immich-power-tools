@@ -139,7 +139,7 @@ function AnnotatedActionNode({ data }: NodeProps) {
   };
   const labels: Record<string, string> = {
     create_album: "Create Album", add_to_album: "Add to Album", remove_from_album: "Remove from Album", update_album: "Update Album", update_tag: "Update Tag",
-    favorite: "Favorite", unfavorite: "Unfavorite", archive: "Archive", tag: "Add Tag", remove_tag: "Remove Tag",
+    favorite: "Favorite", unfavorite: "Unfavorite", archive: "Archive", tag: "Apply Tag", remove_tag: "Remove Tag",
   };
   const Icon = icons[subType] || FolderPlus;
   const isDryRun = step?.detail?.includes("DRY RUN");

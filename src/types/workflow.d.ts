@@ -80,7 +80,16 @@ export interface ISwitchNodeData { cases: ISwitchCase[]; }
 export interface ICreateAlbumActionData { nameTemplate: string; }
 export interface IAddToAlbumActionData { albumId: string; }
 export interface IRemoveFromAlbumActionData { albumId: string; }
-export interface ITagActionData { tagName: string; }
+/** The tag actions point at an existing tag by id; `tagValue` is its full path,
+ *  kept for display and as a fallback if the id changes (moving or renaming a
+ *  tag gives it a new one). `tagName` is the hand-typed name older actions
+ *  saved, still resolved by name at run time. */
+export interface ITagActionData {
+  tagId?: string;
+  tagValue?: string;
+  /** @deprecated superseded by tagId — read for backwards compatibility only. */
+  tagName?: string;
+}
 
 export interface IWorkflowExport {
   version: number;

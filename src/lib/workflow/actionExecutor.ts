@@ -60,12 +60,38 @@ async function currentTagMembers(tagId: string, ownerId: string): Promise<string
   return (rows as any[]).map((r) => r.id);
 }
 
-/** Create-or-get a tag by name. Immich's POST /tags rejects a duplicate with a
- *  400, so the upsert endpoint (PUT /tags) is the one that's safe to call when
- *  the tag may already exist. */
-async function upsertTagByName(name: string, user: IUser): Promise<{ id: string } | undefined> {
-  const created = await immichFetch("/tags", "PUT", { tags: [name] }, user);
-  return Array.isArray(created) ? created[0] : created;
+/** Resolve the tag an action is configured with. The tag actions only ever
+ *  change which photos carry a tag -- they never create, rename or delete one,
+ *  so this looks the tag up and fails loudly if it's gone rather than
+ *  conjuring it into existence. */
+async function resolveTag(config: any, user: IUser): Promise<{ id: string; value: string }> {
+  const tags = await immichFetch("/tags", "GET", undefined, user);
+  const list: any[] = Array.isArray(tags) ? tags : [];
+
+  if (config.tagId) {
+    const byId = list.find((t) => t.id === config.tagId);
+    if (byId) return { id: byId.id, value: byId.value };
+    // Moving or renaming a tag gives it a new id, so fall back to the path we
+    // stored next to it before giving up.
+    const byStoredValue = config.tagValue && list.find((t) => t.value === config.tagValue);
+    if (byStoredValue) return { id: byStoredValue.id, value: byStoredValue.value };
+    throw new Error(
+      `The tag this action points at no longer exists${config.tagValue ? ` ("${config.tagValue}")` : ""}. ` +
+      `Open the action and pick a tag again.`
+    );
+  }
+
+  // Actions saved before the tag picker stored a hand-typed name.
+  if (config.tagName) {
+    const byValue = list.find((t) => t.value === config.tagName);
+    if (byValue) return { id: byValue.id, value: byValue.value };
+    throw new Error(
+      `No tag called "${config.tagName}" exists. Open the action and pick an existing tag ` +
+      `(these actions no longer create tags -- make it in Tag Manager first).`
+    );
+  }
+
+  throw new Error("No tag selected for this action");
 }
 
 function diff(desired: string[], current: string[]) {
@@ -94,11 +120,7 @@ export async function previewSyncAction(
       return { toAdd: toAdd.length, toRemove: toRemove.length };
     }
     if (subType === "update_tag") {
-      if (!config.tagName) return null;
-      const tags = await immichFetch("/tags", "GET", undefined, user);
-      const tag = Array.isArray(tags) ? tags.find((t: any) => t.value === config.tagName) : undefined;
-      // Tag doesn't exist yet — everything matching would be added, nothing removed.
-      if (!tag) return { toAdd: assetIds.length, toRemove: 0 };
+      const tag = await resolveTag(config, user);
       const { toAdd, toRemove } = diff(assetIds, await currentTagMembers(tag.id, user.id));
       return { toAdd: toAdd.length, toRemove: toRemove.length };
     }
@@ -253,10 +275,8 @@ export async function executeAction(
     }
 
     case "update_tag": {
-      if (!config.tagName) throw new Error("Tag name is required for update_tag");
       try {
-        const tag = await upsertTagByName(config.tagName, user);
-        if (!tag?.id) throw new Error(`Could not create or find tag "${config.tagName}"`);
+        const tag = await resolveTag(config, user);
         const { toAdd, toRemove } = diff(assetIds, await currentTagMembers(tag.id, user.id));
         if (toAdd.length) {
           await immichFetchBatched(`/tags/${tag.id}/assets`, "PUT", toAdd, {}, user);
@@ -312,11 +332,8 @@ export async function executeAction(
     }
 
     case "tag": {
-      if (!config.tagName) throw new Error("Tag name is required");
       try {
-        // Create or get tag
-        const tag = await immichFetch("/tags", "POST", { name: config.tagName }, user);
-        // Tag assets
+        const tag = await resolveTag(config, user);
         await immichFetchBatched(`/tags/${tag.id}/assets`, "PUT", assetIds, {}, user);
         return { action: "tag", assetsProcessed: assetIds.length };
       } catch (e: any) {
@@ -325,16 +342,8 @@ export async function executeAction(
     }
 
     case "remove_tag": {
-      if (!config.tagName) throw new Error("Tag name is required");
       try {
-        // Look up the tag via Immich's API (same source of truth the "tag"
-        // action creates/gets from) without creating it — removing a tag
-        // that doesn't exist is a no-op, not an error.
-        const tags = await immichFetch("/tags", "GET", undefined, user);
-        const tag = Array.isArray(tags) ? tags.find((t: any) => t.value === config.tagName) : undefined;
-        if (!tag) {
-          return { action: "remove_tag", assetsProcessed: 0 };
-        }
+        const tag = await resolveTag(config, user);
         await immichFetchBatched(`/tags/${tag.id}/assets`, "DELETE", assetIds, {}, user);
         return { action: "remove_tag", assetsProcessed: assetIds.length };
       } catch (e: any) {
