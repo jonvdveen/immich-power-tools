@@ -8,12 +8,12 @@ import {
 } from "lucide-react";
 import { RowsPhotoAlbum } from "react-photo-album";
 import type { RenderImageContext, RenderImageProps } from "react-photo-album";
-import { useTheme } from "next-themes";
 
 import ExifPanel from "@/components/cull/ExifPanel";
 import HelpGuide from "@/components/cull/HelpGuide";
 import ShortcutSettings from "@/components/cull/ShortcutSettings";
 import PageLayout from "@/components/layouts/PageLayout";
+import AddToAlbumButton from "@/components/shared/AddToAlbumButton";
 import type { AssetPhoto } from "@/components/shared/AssetGrid";
 import FloatingBar from "@/components/shared/FloatingBar";
 import Header from "@/components/shared/Header";
@@ -150,19 +150,17 @@ export default function CullPhotosPage() {
   const [assetTypeFilter, setAssetTypeFilter] = useState<ICullAssetType>("all");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const { exImmichUrl } = useConfig();
-  // Full-screen viewer's bottom control chips key off the site theme (the
-  // viewer's photo backdrop itself stays black in both themes — this only
-  // governs the translucent chip fill/text so it still contrasts with an
-  // arbitrary photo behind it).
-  const { resolvedTheme } = useTheme();
-  const isDarkViewerChrome = resolvedTheme !== "light";
-  const viewerChipBg = isDarkViewerChrome ? "bg-black/30" : "bg-white/30";
-  const viewerChipBorder = isDarkViewerChrome ? "border-white/20" : "border-black/15";
-  const viewerMutedText = isDarkViewerChrome ? "text-white/60" : "text-black/60";
-  const viewerMutedHint = isDarkViewerChrome ? "text-white/50" : "text-black/50";
-  const viewerHoverBg = isDarkViewerChrome ? "hover:bg-white/10" : "hover:bg-black/10";
-  const viewerStarMuted = isDarkViewerChrome ? "text-white/40" : "text-black/40";
-  const viewerOnBg = isDarkViewerChrome ? "bg-white/20 text-white" : "bg-black/20 text-black";
+  // The viewer's action bar is a solid panel, styled to match the grid's
+  // bulk-action bar, so its controls use the ordinary theme tokens. They used
+  // to be translucent-on-photo, which each group needed back when it sat
+  // directly on the image and had to hold contrast against any photo behind it.
+  const viewerChipBg = "";
+  const viewerChipBorder = "";
+  const viewerMutedText = "text-muted-foreground";
+  const viewerMutedHint = "text-muted-foreground";
+  const viewerHoverBg = "hover:bg-muted";
+  const viewerStarMuted = "text-muted-foreground/40";
+  const viewerOnBg = "bg-muted text-foreground";
 
   // --- data ---
   const [assets, setAssets] = useState<ICullAsset[]>([]);
@@ -954,6 +952,16 @@ export default function CullPhotosPage() {
               </Button>
             </AlertDialog>
           </div>
+          {/* Add to album — its own group, since it's the one control here that
+              sends photos somewhere rather than changing a flag on them. */}
+          <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+            <AddToAlbumButton
+              assetIds={selectedIds}
+              buttonClassName={CTRL.btn}
+              iconSize={CTRL.icon}
+              disabled={busy}
+            />
+          </div>
           <Button size="sm" variant="ghost" className={CTRL.btn} title="Clear selection (Esc)" onClick={() => setSelectedIds([])}>
             <X size={CTRL.icon} />
           </Button>
@@ -1035,14 +1043,14 @@ export default function CullPhotosPage() {
             <ChevronRight size={24} />
           </button>
 
-          {/* bottom overlay: same bordered-cluster + key-hint layout as the
-              grid's bulk-action bar, just targeting this one photo. Each
-              group carries its own solid 30%-opacity chip (instead of one
-              whole-strip gradient) so it contrasts with the photo directly
-              behind it regardless of that photo's own colors; the chip tint
-              itself follows the site theme. flex-wrap so nothing clips
-              off-screen on phones. */}
-          <div className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap items-center justify-center gap-2 px-4 py-3">
+          {/* bottom bar: same bordered-cluster + key-hint layout as the grid's
+              bulk-action bar, just targeting this one photo — and now the same
+              solid panel too, rather than translucent chips laid over the
+              photo. Its own element rather than <FloatingBar> because that
+              component offsets itself past the sidebar, which isn't there in
+              full screen. flex-wrap so nothing clips off-screen on phones. */}
+          <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center px-4 py-3">
+            <div className="flex max-w-[95vw] w-fit flex-wrap items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 py-2 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
             {/* Rating */}
             <div className={`flex items-center rounded-md border ${viewerChipBorder} ${viewerChipBg} p-0.5`}>
               <span style={{ fontSize: CTRL.hint }} className={`pl-1.5 font-medium ${viewerMutedHint} select-none`}>1–5</span>
@@ -1128,10 +1136,11 @@ export default function CullPhotosPage() {
                 description="It goes to Immich's trash (recoverable there until it's emptied), not permanent deletion."
                 onConfirm={() => trashAssets([viewerAsset.id])}
               >
-                <button className={`rounded ${CTRL.pad} text-red-400 ${viewerHoverBg} disabled:opacity-40`} disabled={busy}>
+                <button className={`rounded ${CTRL.pad} text-red-500 ${viewerHoverBg} disabled:opacity-40`} disabled={busy}>
                   <Trash2 size={CTRL.icon} />
                 </button>
               </AlertDialog>
+              </div>
             </div>
           </div>
         </div>
