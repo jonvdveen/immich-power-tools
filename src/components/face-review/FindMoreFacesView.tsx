@@ -9,10 +9,16 @@ import { addRejects, clearRejects, loadRejects } from "@/components/face-review/
 import ReviewTabs, { IReviewNavProps } from "@/components/face-review/ReviewTabs";
 import { useFaceSelection } from "@/components/face-review/useFaceSelection";
 import { Button } from "@/components/ui/button";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { getCandidates } from "@/handlers/api/faceReview.handler";
 import { IFaceReviewFace } from "@/types/faceReview";
 
-const BATCH = 24;
+/** Matches the Tagged > Faces per-page options. The default has to be one of
+ *  these or the Select renders blank. */
+const PER_PAGE_OPTIONS = [25, 50, 100, 200];
+const PER_PAGE_DEFAULT = 25;
 
 /**
  * "Find more > Faces": multi-select review of look-alike candidates,
@@ -35,6 +41,7 @@ export default function FindMoreFacesView({
   const [hasNext, setHasNext] = useState(false);
   const [loading, setLoading] = useState(false);
   const [skipCount, setSkipCount] = useState(0);
+  const [perPage, setPerPage] = useState(PER_PAGE_DEFAULT);
   const [lightboxAsset, setLightboxAsset] = useState<string | null>(null);
 
   const orderedIds = useMemo(() => cards.map((c) => c.faceId), [cards]);
@@ -49,7 +56,7 @@ export default function FindMoreFacesView({
         const res = await getCandidates(personId, {
           scope,
           exclude: [...loadRejects(personId)],
-          limit: BATCH,
+          limit: perPage,
           offset: reset ? 0 : cards.length,
         });
         setCards((prev) => (reset ? res.candidates : [...prev, ...res.candidates]));
@@ -60,7 +67,7 @@ export default function FindMoreFacesView({
         setLoading(false);
       }
     },
-    [personId, scope, cards.length]
+    [personId, scope, cards.length, perPage]
   );
 
   useEffect(() => {
@@ -69,7 +76,7 @@ export default function FindMoreFacesView({
     refreshSkipCount();
     load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [personId, scope]);
+  }, [personId, scope, perPage]);
 
   /** Drop faces from the visible grid once they've been actioned. */
   const removeCards = (faceIds: string[]) => {
@@ -116,22 +123,35 @@ export default function FindMoreFacesView({
           Select the faces that are {personName || "this person"}, then Assign. &quot;No, not
           them&quot; hides the selection on this device (nothing is written to Immich).
         </span>
-        {skipCount > 0 && (
-          <span className="ml-auto">
-            {skipCount} face{skipCount === 1 ? "" : "s"} skipped on this device ·{" "}
-            <button
-              className="underline hover:text-foreground"
-              onClick={() => {
-                if (!confirm('Forget the faces you marked "No" for this person on this device? They can then reappear as candidates.')) return;
-                clearRejects(personId);
-                refreshSkipCount();
-                load(true);
-              }}
-            >
-              reset
-            </button>
-          </span>
-        )}
+        {/* Right-hand group so "Per page" keeps the same spot whether or not
+            the skipped-faces notice is showing. */}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {skipCount > 0 && (
+            <span>
+              {skipCount} face{skipCount === 1 ? "" : "s"} skipped on this device ·{" "}
+              <button
+                className="underline hover:text-foreground"
+                onClick={() => {
+                  if (!confirm('Forget the faces you marked "No" for this person on this device? They can then reappear as candidates.')) return;
+                  clearRejects(personId);
+                  refreshSkipCount();
+                  load(true);
+                }}
+              >
+                reset
+              </button>
+            </span>
+          )}
+          <label className="text-sm text-muted-foreground">Per page</label>
+          <Select value={String(perPage)} onValueChange={(v) => setPerPage(+v)}>
+            <SelectTrigger className="w-20 h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PER_PAGE_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {selection.selected.size > 0 && (
