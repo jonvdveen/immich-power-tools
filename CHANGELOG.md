@@ -7,6 +7,60 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.34.0 — 2026-08-01
+
+Workflows can now keep an album or tag in step with their own rules, the tag
+actions were quietly broken and are fixed, and a few conveniences in Rate &
+Cull and Face Review.
+
+### Workflows
+
+- **Added:** two new actions, **Update Album** and **Update Tag**. Where "Add to
+  Album" only ever adds, these keep the album or tag *matching the flow's
+  rules*: photos that now match get added, and photos in there that no longer
+  match get taken out. Closer to a smart album that maintains itself.
+
+  Two things to know. They do exactly what they say, so if nothing matches, the
+  album empties — and a photo you added to that album by hand will be removed
+  on the next run, because it doesn't match the rules. They also need the "All
+  assets" trigger: on "New assets only" the run only sees part of your library
+  and would strip out everything else, so that combination is refused when you
+  save. Only albums and tags have this; favourites and archive don't, because
+  there'd be nothing to limit the removals to and one flow would end up
+  deciding what's favourited across your whole library.
+
+- **Fixed:** the **Add Tag** action — now called **Apply Tag** — had been
+  failing silently. It tried to create its tag on every run, and Immich refuses
+  to create a tag that already exists, so the action worked the first time and
+  errored every time after, while the run still reported success. One flow here
+  was matching 808 photos and tagging none of them. It also needed a permission
+  the workflow API key isn't usually given, which produced a "Missing required
+  permission" error.
+
+- **Changed:** all three tag actions now **pick from a list of your existing
+  tags** instead of you typing a name, with sub-tags shown by their full path.
+  They only change which photos carry a tag — they never create, rename or
+  delete tags. Make tags in Tag Manager. Existing flows keep working and are
+  flagged in the editor so you can re-pick when convenient.
+
+- **Changed:** the **Album** condition takes several albums at once — see
+  v0.33.0.
+
+### Rate & Cull
+
+- **Changed:** the action bar in full-screen is now a solid panel instead of
+  see-through buttons floating over the photo, matching the bar you get when
+  multi-selecting in the grid.
+- **Added:** an **add-to-album** button on the multi-select bar. Search your
+  albums, or type a name that doesn't exist yet and create it with the selected
+  photos already in it.
+
+### Face Review
+
+- **Added:** a **Per page** dropdown on **Find more → Faces**, the same as the
+  one on Tagged → Faces, so you can pull in 50, 100 or 200 candidates at a time
+  instead of a fixed two dozen. Defaults to 50.
+
 ## v0.33.0 — 2026-07-31
 
 Tags you move or delete now stay moved and deleted, and a workflow's "Album"
