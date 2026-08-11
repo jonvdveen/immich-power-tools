@@ -18,7 +18,7 @@ import { IFaceReviewFace } from "@/types/faceReview";
 /** Matches the Tagged > Faces per-page options. The default has to be one of
  *  these or the Select renders blank. */
 const PER_PAGE_OPTIONS = [25, 50, 100, 200];
-const PER_PAGE_DEFAULT = 25;
+const PER_PAGE_DEFAULT = 50;
 
 /**
  * "Find more > Faces": multi-select review of look-alike candidates,
@@ -109,9 +109,20 @@ export default function FindMoreFacesView({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* tab bar (incl. the Include selector) + Select all/none on one row */}
+      {/* tab bar (incl. the Include selector) + Per page + Select all/none on one row */}
       <div className="flex flex-wrap items-center gap-3">
         <ReviewTabs {...nav} />
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-muted-foreground">Per page</label>
+          <Select value={String(perPage)} onValueChange={(v) => setPerPage(+v)}>
+            <SelectTrigger className="w-20 h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PER_PAGE_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={selection.selectAll} disabled={!cards.length}>Select all</Button>
           <Button size="sm" variant="outline" onClick={selection.clear} disabled={!selection.selected.size}>Deselect all</Button>
@@ -123,35 +134,22 @@ export default function FindMoreFacesView({
           Select the faces that are {personName || "this person"}, then Assign. &quot;No, not
           them&quot; hides the selection on this device (nothing is written to Immich).
         </span>
-        {/* Right-hand group so "Per page" keeps the same spot whether or not
-            the skipped-faces notice is showing. */}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          {skipCount > 0 && (
-            <span>
-              {skipCount} face{skipCount === 1 ? "" : "s"} skipped on this device ·{" "}
-              <button
-                className="underline hover:text-foreground"
-                onClick={() => {
-                  if (!confirm('Forget the faces you marked "No" for this person on this device? They can then reappear as candidates.')) return;
-                  clearRejects(personId);
-                  refreshSkipCount();
-                  load(true);
-                }}
-              >
-                reset
-              </button>
-            </span>
-          )}
-          <label className="text-sm text-muted-foreground">Per page</label>
-          <Select value={String(perPage)} onValueChange={(v) => setPerPage(+v)}>
-            <SelectTrigger className="w-20 h-9"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {PER_PAGE_OPTIONS.map((n) => (
-                <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {skipCount > 0 && (
+          <span className="ml-auto">
+            {skipCount} face{skipCount === 1 ? "" : "s"} skipped on this device ·{" "}
+            <button
+              className="underline hover:text-foreground"
+              onClick={() => {
+                if (!confirm('Forget the faces you marked "No" for this person on this device? They can then reappear as candidates.')) return;
+                clearRejects(personId);
+                refreshSkipCount();
+                load(true);
+              }}
+            >
+              reset
+            </button>
+          </span>
+        )}
       </div>
 
       {selection.selected.size > 0 && (
