@@ -93,13 +93,7 @@ export default function AddToAlbumButton({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0 z-[10000]" align="center" side="top">
-        <Command
-          // Let the typed text stand on its own so "create" stays reachable
-          // even when no album name matches it.
-          filter={(value, search) =>
-            value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
-          }
-        >
+        <Command>
           <CommandInput
             placeholder="Find or name an album..."
             className="text-xs"
@@ -108,24 +102,6 @@ export default function AddToAlbumButton({
           />
           <CommandList>
             {!loading && <CommandEmpty>No matching album.</CommandEmpty>}
-            {trimmed && !exactExists && (
-              <CommandGroup>
-                <CommandItem
-                  // forceMount so the create row survives the filter, which
-                  // otherwise hides it for a name no album matches.
-                  forceMount
-                  value={`__create__${trimmed}`}
-                  onSelect={createWith}
-                  disabled={saving}
-                  className="flex items-center gap-2"
-                >
-                  <Plus className="h-3 w-3" />
-                  <span className="text-xs truncate">
-                    Create album &ldquo;{trimmed}&rdquo;
-                  </span>
-                </CommandItem>
-              </CommandGroup>
-            )}
             <CommandGroup heading={loading ? "Loading albums…" : "Albums"}>
               {albums.map((album) => (
                 <CommandItem
@@ -143,6 +119,28 @@ export default function AddToAlbumButton({
               ))}
             </CommandGroup>
           </CommandList>
+
+          {/* Deliberately outside <CommandList>: cmdk hides a group when none
+              of its items match the search, which takes any item inside it with
+              them — including the create row, exactly when a name matches no
+              album and you most need it. Sitting outside the list, it isn't
+              filtered at all. A plain button rather than a CommandItem for the
+              same reason. */}
+          {trimmed && !exactExists && (
+            <div className="border-t p-1">
+              <button
+                type="button"
+                onClick={createWith}
+                disabled={saving}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+              >
+                <Plus className="h-3 w-3 shrink-0" />
+                <span className="text-xs truncate">
+                  Create album &ldquo;{trimmed}&rdquo;
+                </span>
+              </button>
+            </div>
+          )}
         </Command>
       </PopoverContent>
     </Popover>
