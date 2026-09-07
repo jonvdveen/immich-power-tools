@@ -1,6 +1,6 @@
 import { listDuplicates, deleteAssets, updateAssets, getAlbumsByAssetIds, IAssetAlbumInfo } from "@/handlers/api/asset.handler";
 import { addAssetToAlbum } from "@/handlers/api/album.handler";
-import { IDuplicateAssetRecord } from "@/types/asset";
+import { IDuplicateAssetRecord, IPartnerMatch } from "@/types/asset";
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import PageLayout from '@/components/layouts/PageLayout'
 import Header from '@/components/shared/Header'
@@ -47,6 +47,10 @@ export default function BulkDuplicatePage() {
   const [partnerScanning, setPartnerScanning] = useState(false);
   const [autoPicking, setAutoPicking] = useState(false);
   const [autoPickSummary, setAutoPickSummary] = useState<IAutoPickSummary | null>(null);
+  const [partnerMatches, setPartnerMatches] = useState<Record<string, IPartnerMatch[]>>({});
+  const [partnerProgress, setPartnerProgress] = useState<{ done: number; total: number } | null>(null);
+  /** Bumped to abandon an in-flight partner scan (toggle off, or refetch). */
+  const partnerScanToken = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load album move mode from localStorage
@@ -484,6 +488,59 @@ export default function BulkDuplicatePage() {
     }
   }, [albumTransferMode, getAlbumsToTransfer, executeDedupCb]);
 
+  // Partner scan. Each match is a vector probe (~17ms), so a whole library
+  // would take minutes — walk the groups in batches instead, showing results as
+  // they land, and abandon the walk if the toggle goes off or the data reloads.
+  useEffect(() => {
+    partnerScanToken.current += 1;
+    const token = partnerScanToken.current;
+
+    if (!includePartners) {
+      setPartnerScanning(false);
+      setPartnerProgress(null);
+      setPartnerMatches({});
+      return;
+    }
+
+    // One representative per group is enough: copies within a group are
+    // near-identical, so a partner match for one is a match for the group.
+    const reps = duplicates
+      .map((record) => record.assets[0]?.id)
+      .filter((id): id is string => !!id);
+    if (reps.length === 0) return;
+
+    const BATCH = 100;
+    let cancelled = false;
+
+    (async () => {
+      setPartnerScanning(true);
+      setPartnerProgress({ done: 0, total: reps.length });
+      try {
+        for (let i = 0; i < reps.length; i += BATCH) {
+          if (cancelled || partnerScanToken.current !== token) return;
+          const batch = reps.slice(i, i + BATCH);
+          const res = await API.post('/api/assets/duplicates/partner-matches', { assetIds: batch });
+          if (cancelled || partnerScanToken.current !== token) return;
+          if (res?.matches && Object.keys(res.matches).length) {
+            setPartnerMatches((prev) => ({ ...prev, ...res.matches }));
+          }
+          setPartnerProgress({ done: Math.min(i + BATCH, reps.length), total: reps.length });
+        }
+      } catch (e: any) {
+        if (!cancelled && partnerScanToken.current === token) {
+          toast({ title: 'Partner scan failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+        }
+      } finally {
+        if (partnerScanToken.current === token) {
+          setPartnerScanning(false);
+          setPartnerProgress(null);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [includePartners, duplicates]);
+
   /** Fill in a proposed keeper per group. Never deletes, and never touches a
    *  group the user has already decided — re-running is safe and idempotent. */
   const handleAutoPick = useCallback(async () => {
@@ -630,6 +687,7 @@ export default function BulkDuplicatePage() {
               includePartners={includePartners}
               onIncludePartnersChange={setIncludePartners}
               partnerScanning={partnerScanning}
+              partnerProgress={partnerProgress}
               onAutoPick={handleAutoPick}
               autoPicking={autoPicking}
               autoPickSummary={autoPickSummary}
@@ -750,6 +808,7 @@ export default function BulkDuplicatePage() {
                 height={containerHeight}
                 selectionMode={selectionMode}
                 assetAlbums={assetAlbums}
+                partnerMatches={partnerMatches}
               />
             </div>
           </>

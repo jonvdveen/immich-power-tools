@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { IDuplicateAssetRecord, IDuplicateAsset } from '@/types/asset'
+import { IDuplicateAssetRecord, IDuplicateAsset, IPartnerMatch } from '@/types/asset'
 import { ASSET_THUMBNAIL_PATH } from '@/config/routes'
 import LazyImage from '@/components/ui/lazy-image'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -8,7 +8,7 @@ import { AlertDialog } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { humanizeBytes, humanizeNumber } from '@/helpers/string.helper'
 import { formatDate } from '@/helpers/date.helper'
-import { Camera, Calendar, FolderOpen, HardDrive, HelpCircle, MapPin, Trash2, Check, X, Shield } from 'lucide-react'
+import { Camera, Calendar, FolderOpen, HardDrive, HelpCircle, Lock, MapPin, Trash2, Check, X, Shield, Users } from 'lucide-react'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
 
 interface DuplicateAssetRecordProps {
@@ -20,6 +20,7 @@ interface DuplicateAssetRecordProps {
   onKeepAllInRecord: (record: IDuplicateAssetRecord) => void
   selectionMode: 'keep' | 'discard'
   assetAlbums: Record<string, IAssetAlbumInfo[]>
+  partnerMatches: Record<string, IPartnerMatch[]>
 }
 
 interface DuplicateAssetItemProps {
@@ -31,6 +32,46 @@ interface DuplicateAssetItemProps {
   /** Whether anything in this asset's group has been picked yet. Until
    *  something is, no card gets a KEEP/DISCARD verdict — see the badge below. */
   groupHasSelection: boolean
+}
+
+
+/** A copy living in a partner's library. Deliberately has no checkbox: it is
+ *  not the current user's asset, they have no permission to delete it, and it
+ *  must never become the "keeper" (that would discard every copy they DO own).
+ *  Shown so they can see the photo is already held elsewhere. */
+function PartnerMatchCard({ match }: { match: IPartnerMatch }) {
+  return (
+    <div className="border border-dashed rounded-lg overflow-hidden relative opacity-90">
+      <div className="relative">
+        <LazyImage
+          src={ASSET_THUMBNAIL_PATH(match.id)}
+          alt={match.originalFileName}
+          title={match.originalFileName}
+          style={{ width: '100%', height: '200px', objectFit: 'cover' }}
+        />
+        <div className="absolute top-2 right-2 bg-sky-700 text-white text-xs px-2 py-1 rounded font-bold flex items-center gap-1">
+          <Users size={12} />
+          PARTNER
+        </div>
+        <div className="absolute top-2 left-2 bg-gray-900/80 text-white rounded-full p-1" title="Not yours — cannot be selected or deleted here">
+          <Lock size={12} />
+        </div>
+        <div className="absolute bottom-0 w-full bg-gray-800/70 text-white text-center text-xs font-bold py-1">
+          {match.ownerName}
+        </div>
+      </div>
+      <div className="p-3 space-y-1">
+        <p className="text-xs font-medium truncate" title={match.originalFileName}>{match.originalFileName}</p>
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <HardDrive size={12} /> {humanizeBytes(match.fileSizeInByte)}
+          {match.width > 0 && <> · {match.width} x {match.height}</>}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          In {match.ownerName}&apos;s library — read only
+        </p>
+      </div>
+    </div>
+  )
 }
 
 function DuplicateAssetItem({ asset, isSelected, onSelect, selectionMode, albums, groupHasSelection }: DuplicateAssetItemProps) {
@@ -175,6 +216,7 @@ export default function DuplicateAssetRecord({
   onAssetSelect, 
   onDeleteRecord, 
   onKeepSelected,
+  partnerMatches,
   onKeepAllInRecord,
   selectionMode,
   assetAlbums
@@ -345,6 +387,17 @@ export default function DuplicateAssetRecord({
             albums={assetAlbums[asset.id] || []}
             groupHasSelection={selectedInRecord > 0}
           />
+        ))}
+        {/* Partner copies last, after the user's own — reference only. Deduped
+            by id because two of your copies can match the same partner photo. */}
+        {Array.from(
+          new Map(
+            record.assets
+              .flatMap((asset) => partnerMatches[asset.id] || [])
+              .map((m) => [m.id, m])
+          ).values()
+        ).map((match) => (
+          <PartnerMatchCard key={match.id} match={match} />
         ))}
       </div>
     </div>

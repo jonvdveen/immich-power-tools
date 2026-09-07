@@ -16,6 +16,7 @@ interface DuplicateOptionsMenuProps {
   includePartners: boolean
   onIncludePartnersChange: (value: boolean) => void
   partnerScanning: boolean
+  partnerProgress: { done: number; total: number } | null
   onAutoPick: () => void
   autoPicking: boolean
   autoPickSummary: IAutoPickSummary | null
@@ -29,6 +30,7 @@ export default function DuplicateOptionsMenu({
   includePartners,
   onIncludePartnersChange,
   partnerScanning,
+  partnerProgress,
   onAutoPick,
   autoPicking,
   autoPickSummary,
@@ -76,7 +78,7 @@ export default function DuplicateOptionsMenu({
             {partnerScanning && (
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 size={12} className="animate-spin" />
-                Scanning partner libraries…
+                Scanning partner libraries{partnerProgress ? ` — ${partnerProgress.done.toLocaleString()} of ${partnerProgress.total.toLocaleString()} groups` : ''}…
               </p>
             )}
           </div>

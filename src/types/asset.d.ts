@@ -81,3 +81,17 @@ export interface IDuplicateAssetExifInfo {
   projectionType:   null;
   rating:           null;
 }
+
+/** A copy of one of your photos that lives in a partner's library. Read-only:
+ *  it belongs to someone else, so it can never be selected or deleted here. */
+export interface IPartnerMatch {
+  id:               string;
+  ownerId:          string;
+  ownerName:        string;
+  originalFileName: string;
+  fileSizeInByte:   number;
+  width:            number;
+  height:           number;
+  /** CLIP cosine distance from your copy. Smaller is a closer match. */
+  distance:         number;
+}

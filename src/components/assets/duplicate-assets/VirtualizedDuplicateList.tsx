@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { VariableSizeList as List } from 'react-window'
-import { IDuplicateAssetRecord } from '@/types/asset'
+import { IDuplicateAssetRecord, IPartnerMatch } from '@/types/asset'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
 import DuplicateAssetRecord from './DuplicateAssetRecord'
 
@@ -14,6 +14,7 @@ interface VirtualizedDuplicateListProps {
   height: number
   selectionMode: 'keep' | 'discard'
   assetAlbums: Record<string, IAssetAlbumInfo[]>
+  partnerMatches: Record<string, IPartnerMatch[]>
 }
 
 interface ListItemProps {
@@ -28,11 +29,12 @@ interface ListItemProps {
     onKeepAllInRecord: (record: IDuplicateAssetRecord) => void
     selectionMode: 'keep' | 'discard'
     assetAlbums: Record<string, IAssetAlbumInfo[]>
+    partnerMatches: Record<string, IPartnerMatch[]>
   }
 }
 
 const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
-  const { duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected, onKeepAllInRecord, selectionMode, assetAlbums } = data
+  const { duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected, onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches } = data
   const record = duplicates[index]
 
   return (
@@ -47,6 +49,7 @@ const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
           onKeepAllInRecord={onKeepAllInRecord}
           selectionMode={selectionMode}
           assetAlbums={assetAlbums}
+          partnerMatches={partnerMatches}
         />
       </div>
     </div>
@@ -77,7 +80,8 @@ export default function VirtualizedDuplicateList({
   onKeepAllInRecord,
   height,
   selectionMode,
-  assetAlbums
+  assetAlbums,
+  partnerMatches
 }: VirtualizedDuplicateListProps) {
   const listRef = useRef<List>(null)
 
@@ -101,7 +105,8 @@ export default function VirtualizedDuplicateList({
     onKeepSelected,
     onKeepAllInRecord,
     selectionMode,
-    assetAlbums
+    assetAlbums,
+    partnerMatches
   }
 
   // For better performance with many items, we'll use a custom implementation
