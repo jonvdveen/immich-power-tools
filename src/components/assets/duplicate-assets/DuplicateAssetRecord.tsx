@@ -8,7 +8,7 @@ import { AlertDialog } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { humanizeBytes, humanizeNumber } from '@/helpers/string.helper'
 import { formatDate } from '@/helpers/date.helper'
-import { Camera, Calendar, FolderOpen, HardDrive, MapPin, Trash2, Check, X, Shield } from 'lucide-react'
+import { Camera, Calendar, FolderOpen, HardDrive, HelpCircle, MapPin, Trash2, Check, X, Shield } from 'lucide-react'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
 
 interface DuplicateAssetRecordProps {
@@ -28,9 +28,12 @@ interface DuplicateAssetItemProps {
   onSelect: (assetId: string, isShiftClick?: boolean) => void
   selectionMode: 'keep' | 'discard'
   albums: IAssetAlbumInfo[]
+  /** Whether anything in this asset's group has been picked yet. Until
+   *  something is, no card gets a KEEP/DISCARD verdict — see the badge below. */
+  groupHasSelection: boolean
 }
 
-function DuplicateAssetItem({ asset, isSelected, onSelect, selectionMode, albums }: DuplicateAssetItemProps) {
+function DuplicateAssetItem({ asset, isSelected, onSelect, selectionMode, albums, groupHasSelection }: DuplicateAssetItemProps) {
   const handleCheckboxChange = (event: React.MouseEvent) => {
     const isShiftClick = event.shiftKey
     onSelect(asset.id, isShiftClick)
@@ -55,9 +58,23 @@ function DuplicateAssetItem({ asset, isSelected, onSelect, selectionMode, albums
           {formatDate(asset.exifInfo.dateTimeOriginal?.toString(), 'MMM d, yyyy')}
         </div>
         
-        {/* Keep/Trash label */}
+        {/* Keep/Trash label. Nothing picked in this group yet means there is no
+            decision to report: the page opens with an empty selection, and
+            labelling every card DISCARD (or, in discard mode, KEEP) read as a
+            verdict the tool had not actually made — on a screen whose whole
+            job is deleting things. Stay neutral until the user picks. */}
         <div className="absolute top-2 right-2">
-          {selectionMode === 'keep' ? (
+          {!groupHasSelection ? (
+            <div
+              className="bg-gray-600/90 text-white text-xs px-2 py-1 rounded font-bold flex items-center gap-1"
+              title={selectionMode === 'keep'
+                ? 'Nothing picked yet — tick the copy you want to keep'
+                : 'Nothing picked yet — tick the copies you want to discard'}
+            >
+              <HelpCircle size={12} />
+              UNDECIDED
+            </div>
+          ) : selectionMode === 'keep' ? (
             isSelected ? (
               <div className="bg-green-600 text-white text-xs px-2 py-1 rounded font-bold flex items-center gap-1">
                 <Shield size={12} />
@@ -326,6 +343,7 @@ export default function DuplicateAssetRecord({
             onSelect={onAssetSelect}
             selectionMode={selectionMode}
             albums={assetAlbums[asset.id] || []}
+            groupHasSelection={selectedInRecord > 0}
           />
         ))}
       </div>
