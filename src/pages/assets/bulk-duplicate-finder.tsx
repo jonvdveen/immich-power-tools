@@ -7,6 +7,7 @@ import Header from '@/components/shared/Header'
 import VirtualizedDuplicateList from '@/components/assets/duplicate-assets/VirtualizedDuplicateList'
 import AlbumTransferDialog from '@/components/assets/duplicate-assets/AlbumTransferDialog'
 import AlbumFilterDropdown from '@/components/assets/duplicate-assets/AlbumFilterDropdown'
+import DuplicateOptionsMenu, { IAutoPickSummary } from '@/components/assets/duplicate-assets/DuplicateOptionsMenu'
 import Loader from '@/components/ui/loader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +16,7 @@ import FloatingBar from '@/components/shared/FloatingBar'
 import { AlertDialog } from '@/components/ui/alert-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
+import API from '@/lib/api'
 import { toast } from '@/components/ui/use-toast'
 import { humanizeBytes } from '@/helpers/string.helper'
 
@@ -41,6 +43,10 @@ export default function BulkDuplicatePage() {
   const [searchInputText, setSearchInputText] = useState('');
   const [searchText, setSearchText] = useState('');
   const [selectedAlbumIds, setSelectedAlbumIds] = useState<Set<string>>(new Set());
+  const [includePartners, setIncludePartners] = useState(false);
+  const [partnerScanning, setPartnerScanning] = useState(false);
+  const [autoPicking, setAutoPicking] = useState(false);
+  const [autoPickSummary, setAutoPickSummary] = useState<IAutoPickSummary | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load album move mode from localStorage
@@ -478,6 +484,48 @@ export default function BulkDuplicatePage() {
     }
   }, [albumTransferMode, getAlbumsToTransfer, executeDedupCb]);
 
+  /** Fill in a proposed keeper per group. Never deletes, and never touches a
+   *  group the user has already decided — re-running is safe and idempotent. */
+  const handleAutoPick = useCallback(async () => {
+    setAutoPicking(true);
+    try {
+      const groupsToPick = filteredDuplicates.filter(
+        (record) => !record.assets.some((a) => selectedAssets.has(a.id))
+      );
+      const skipped = filteredDuplicates.length - groupsToPick.length;
+      const assetIds = groupsToPick.flatMap((record) => record.assets.map((a) => a.id));
+
+      if (assetIds.length === 0) {
+        setAutoPickSummary({ picked: 0, undecided: 0, skipped });
+        toast({ title: 'Nothing to pick', description: 'Every visible group has already been decided.' });
+        return;
+      }
+
+      const res = await API.post('/api/assets/duplicates/auto-pick', { assetIds });
+      const keeperIds: string[] = Object.values(res.keepers || {});
+
+      // Auto-pick chooses keepers, so the page has to be reading the selection
+      // as "keep these" for the result to mean what it says.
+      setSelectionMode('keep');
+      setSelectedAssets((prev) => {
+        const next = new Set(prev);
+        keeperIds.forEach((id) => next.add(id));
+        return next;
+      });
+
+      const undecided = (res.undecided || []).length;
+      setAutoPickSummary({ picked: keeperIds.length, undecided, skipped });
+      toast({
+        title: 'Keepers picked',
+        description: `${keeperIds.length.toLocaleString()} picked${undecided ? `, ${undecided.toLocaleString()} too alike to call` : ''}. Nothing deleted — review, then act.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Auto-pick failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setAutoPicking(false);
+    }
+  }, [filteredDuplicates, selectedAssets]);
+
   const handleDeleteAllSelected = async () => {
     if (selectedAssets.size === 0 || selectionMode !== 'discard') return;
 
@@ -577,6 +625,16 @@ export default function BulkDuplicatePage() {
                 </Button>
               </div>
             </div>
+
+            <DuplicateOptionsMenu
+              includePartners={includePartners}
+              onIncludePartnersChange={setIncludePartners}
+              partnerScanning={partnerScanning}
+              onAutoPick={handleAutoPick}
+              autoPicking={autoPicking}
+              autoPickSummary={autoPickSummary}
+              disabled={loading || duplicates.length === 0}
+            />
 
             {/* Refresh Button */}
             <Button
