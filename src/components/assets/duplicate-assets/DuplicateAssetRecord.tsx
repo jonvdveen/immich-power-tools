@@ -10,6 +10,7 @@ import { humanizeBytes, humanizeNumber } from '@/helpers/string.helper'
 import { formatDate } from '@/helpers/date.helper'
 import { Camera, Calendar, FolderOpen, HardDrive, HelpCircle, Lock, MapPin, Trash2, Check, X, Shield, Users } from 'lucide-react'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
+import { cn } from '@/lib/utils'
 
 interface DuplicateAssetRecordProps {
   record: IDuplicateAssetRecord
@@ -39,9 +40,22 @@ interface DuplicateAssetItemProps {
  *  not the current user's asset, they have no permission to delete it, and it
  *  must never become the "keeper" (that would discard every copy they DO own).
  *  Shown so they can see the photo is already held elsewhere. */
-function PartnerMatchCard({ match }: { match: IPartnerMatch }) {
+function PartnerMatchCard({
+  match,
+  isKeeper,
+  canBeKeeper,
+  onSelect,
+}: {
+  match: IPartnerMatch
+  isKeeper: boolean
+  canBeKeeper: boolean
+  onSelect: (assetId: string) => void
+}) {
   return (
-    <div className="border border-dashed rounded-lg overflow-hidden relative opacity-90">
+    <div className={cn(
+      'border border-dashed rounded-lg overflow-hidden relative',
+      isKeeper ? 'border-green-600 border-solid ring-2 ring-green-600/40' : 'opacity-90'
+    )}>
       <div className="relative">
         <LazyImage
           src={ASSET_THUMBNAIL_PATH(match.id)}
@@ -49,13 +63,27 @@ function PartnerMatchCard({ match }: { match: IPartnerMatch }) {
           title={match.originalFileName}
           style={{ width: '100%', height: '200px', objectFit: 'cover' }}
         />
-        <div className="absolute top-2 right-2 bg-sky-700 text-white text-xs px-2 py-1 rounded font-bold flex items-center gap-1">
-          <Users size={12} />
-          PARTNER
+        <div className={cn(
+          'absolute top-2 right-2 text-white text-xs px-2 py-1 rounded font-bold flex items-center gap-1',
+          isKeeper ? 'bg-green-600' : 'bg-sky-700'
+        )}>
+          {isKeeper ? <><Shield size={12} /> KEEP (PARTNER&apos;S)</> : <><Users size={12} /> PARTNER</>}
         </div>
-        <div className="absolute top-2 left-2 bg-gray-900/80 text-white rounded-full p-1" title="Not yours — cannot be selected or deleted here">
-          <Lock size={12} />
-        </div>
+        {canBeKeeper ? (
+          // Selectable as the keeper only. It can never be the discarded copy —
+          // this tool has no permission to delete another user's asset — so the
+          // checkbox only ever means "keep theirs, drop mine".
+          <Checkbox
+            checked={isKeeper}
+            onClick={(e) => { e.preventDefault(); onSelect(match.id) }}
+            title="Keep this copy and discard your own"
+            className="absolute top-2 left-2 w-6 h-6 rounded-full border-gray-300"
+          />
+        ) : (
+          <div className="absolute top-2 left-2 bg-gray-900/80 text-white rounded-full p-1" title="Switch to Keep mode to choose a partner's copy. It can never be deleted from here.">
+            <Lock size={12} />
+          </div>
+        )}
         <div className="absolute bottom-0 w-full bg-gray-800/70 text-white text-center text-xs font-bold py-1">
           {match.ownerName}
         </div>
@@ -67,7 +95,9 @@ function PartnerMatchCard({ match }: { match: IPartnerMatch }) {
           {match.width > 0 && <> · {match.width} x {match.height}</>}
         </p>
         <p className="text-xs text-muted-foreground">
-          In {match.ownerName}&apos;s library — read only
+          {isKeeper
+            ? `Keeping ${match.ownerName}'s copy — yours will be discarded`
+            : `In ${match.ownerName}'s library — can't be deleted here`}
         </p>
       </div>
     </div>
@@ -222,6 +252,10 @@ export default function DuplicateAssetRecord({
   assetAlbums
 }: DuplicateAssetRecordProps) {
   const recordAssetIds = record.assets.map(asset => asset.id)
+  const partnerIdsInRecord = useMemo(() => Array.from(new Set(
+    record.assets.flatMap(a => (partnerMatches[a.id] || []).map(m => m.id))
+  )), [record.assets, partnerMatches])
+  const selectedPartnerIds = partnerIdsInRecord.filter(id => selectedAssets.has(id))
   const selectedInRecord = recordAssetIds.filter(id => selectedAssets.has(id)).length
   const unselectedInRecord = record.assets.length - selectedInRecord
   
@@ -259,6 +293,15 @@ export default function DuplicateAssetRecord({
       .filter(asset => !selectedAssets.has(asset.id))
       .map(asset => asset.id)
     
+    // A partner's copy counts as a keeper on its own: choosing it means "they
+    // have this, drop mine", so every copy the user owns here is discarded.
+    // It can only ever be a keeper -- the tool cannot delete another user's
+    // asset -- so this applies in keep mode only.
+    if (selectionMode === 'keep' && selectedPartnerIds.length > 0) {
+      onKeepSelected(record, [...selectedAssetIds, ...selectedPartnerIds], unselectedAssetIds)
+      return
+    }
+
     if (selectedAssetIds.length === 0) return
 
     if (selectionMode === 'keep') {
@@ -385,7 +428,7 @@ export default function DuplicateAssetRecord({
             onSelect={onAssetSelect}
             selectionMode={selectionMode}
             albums={assetAlbums[asset.id] || []}
-            groupHasSelection={selectedInRecord > 0}
+            groupHasSelection={selectedInRecord + selectedPartnerIds.length > 0}
           />
         ))}
         {/* Partner copies last, after the user's own — reference only. Deduped
@@ -397,7 +440,13 @@ export default function DuplicateAssetRecord({
               .map((m) => [m.id, m])
           ).values()
         ).map((match) => (
-          <PartnerMatchCard key={match.id} match={match} />
+          <PartnerMatchCard
+            key={match.id}
+            match={match}
+            isKeeper={selectedAssets.has(match.id)}
+            canBeKeeper={selectionMode === 'keep'}
+            onSelect={onAssetSelect}
+          />
         ))}
       </div>
     </div>

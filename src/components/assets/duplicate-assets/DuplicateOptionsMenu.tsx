@@ -70,9 +70,11 @@ export default function DuplicateOptionsMenu({
             <div className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2">
               <Info size={14} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-500" />
               <p className="text-xs text-muted-foreground">
-                Partner photos are <strong>shown for reference only</strong>. They belong to
-                someone else&apos;s library, so this tool cannot select or delete them, and
-                they are never chosen as the copy to keep.
+                Partner photos belong to someone else&apos;s library, so this tool
+                <strong> can never delete them</strong> — they are never the copy that gets
+                discarded. You <em>can</em> choose a partner&apos;s copy as the keeper, which
+                discards your own copies and leaves you relying on their library for that
+                photo. Auto-pick never does this on your behalf.
               </p>
             </div>
             {partnerScanning && (

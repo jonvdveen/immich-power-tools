@@ -49,6 +49,12 @@ export default function BulkDuplicatePage() {
   const [autoPickSummary, setAutoPickSummary] = useState<IAutoPickSummary | null>(null);
   const [partnerMatches, setPartnerMatches] = useState<Record<string, IPartnerMatch[]>>({});
   const [partnerProgress, setPartnerProgress] = useState<{ done: number; total: number } | null>(null);
+  /** Ids of every partner copy on screen. They can be chosen as a keeper but
+   *  belong to another user, so they must be kept out of every write. */
+  const partnerAssetIds = useMemo(
+    () => new Set(Object.values(partnerMatches).flat().map((m) => m.id)),
+    [partnerMatches]
+  );
   /** Bumped to abandon an in-flight partner scan (toggle off, or refetch). */
   const partnerScanToken = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -228,6 +234,17 @@ export default function BulkDuplicatePage() {
 
     return { count, totalSize };
   }, [duplicates, selectedAssets, selectionMode]);
+
+  // In discard mode a ticked card means "delete this", which can never be true
+  // of a partner's photo — so a keeper picked in keep mode is dropped on the
+  // way out rather than silently changing meaning.
+  useEffect(() => {
+    if (selectionMode === 'keep' || partnerAssetIds.size === 0) return;
+    setSelectedAssets((prev) => {
+      const next = new Set([...prev].filter((id) => !partnerAssetIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [selectionMode, partnerAssetIds]);
 
   const handleAssetSelect = useCallback((assetId: string, isShiftClick?: boolean) => {
     setSelectedAssets(prev => {
@@ -418,14 +435,22 @@ export default function BulkDuplicatePage() {
       }
       await Promise.all(transferCalls);
 
-      // Mark kept assets as non-duplicate
-      if (keptIds.length > 0) {
-        await updateAssets({ ids: keptIds, duplicateId: null });
+      // Mark kept assets as non-duplicate. A partner's copy can be the keeper,
+      // but it is not ours to write to: Immich's bulk update requires
+      // AssetUpdate on every id and THROWS on the first one it is refused,
+      // which would abort the whole dedup. (Album add above is safe by
+      // contrast -- it reports per-asset failures instead of throwing.)
+      const ownKeptIds = keptIds.filter((id) => !partnerAssetIds.has(id));
+      if (ownKeptIds.length > 0) {
+        await updateAssets({ ids: ownKeptIds, duplicateId: null });
       }
 
-      // Delete discarded assets
-      if (discardedIds.length > 0) {
-        await deleteAssets(discardedIds);
+      // Belt and braces: nothing that isn't ours ever reaches a delete. The
+      // selection paths already exclude partner copies from discard, so this
+      // should be a no-op -- it is here so that stays true if they change.
+      const deletableIds = discardedIds.filter((id) => !partnerAssetIds.has(id));
+      if (deletableIds.length > 0) {
+        await deleteAssets(deletableIds);
       }
 
       const removedIds = new Set([...keptIds, ...discardedIds]);
@@ -586,7 +611,7 @@ export default function BulkDuplicatePage() {
   const handleDeleteAllSelected = async () => {
     if (selectedAssets.size === 0 || selectionMode !== 'discard') return;
 
-    const selectedAssetIds = Array.from(selectedAssets);
+    const selectedAssetIds = Array.from(selectedAssets).filter((id) => !partnerAssetIds.has(id));
 
     // In discard mode, the selected assets are discarded, the rest are kept
     const keptIds: string[] = [];
