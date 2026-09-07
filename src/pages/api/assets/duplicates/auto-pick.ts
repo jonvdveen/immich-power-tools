@@ -15,6 +15,14 @@ import { autoPickKeepers, IDuplicateCandidate } from "@/lib/duplicates/autoPick"
  *
  * Read-only: it returns a proposed selection and changes nothing.
  */
+export const config = {
+  api: {
+    // The client batches, but a hand-rolled call shouldn't be silently
+    // rejected by the 1MB default before it reaches the handler.
+    bodyParser: { sizeLimit: "10mb" },
+  },
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 

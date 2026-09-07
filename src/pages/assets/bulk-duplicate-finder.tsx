@@ -22,6 +22,9 @@ import { humanizeBytes } from '@/helpers/string.helper'
 
 type AlbumTransferMode = 'always' | 'never' | 'ask';
 
+/** Remembered per browser, same as this app's other view preferences. */
+const INCLUDE_PARTNERS_KEY = 'duplicates_include_partners';
+
 interface PendingDedup {
   keptIds: string[];
   discardedIds: string[];
@@ -43,9 +46,23 @@ export default function BulkDuplicatePage() {
   const [searchInputText, setSearchInputText] = useState('');
   const [searchText, setSearchText] = useState('');
   const [selectedAlbumIds, setSelectedAlbumIds] = useState<Set<string>>(new Set());
-  const [includePartners, setIncludePartners] = useState(false);
+  const [includePartners, setIncludePartnersState] = useState(false);
   const [partnerScanning, setPartnerScanning] = useState(false);
   const [autoPicking, setAutoPicking] = useState(false);
+  // Hydrated after mount rather than in the initial state: localStorage does
+  // not exist during SSR, and reading it inline would mismatch the server HTML.
+  useEffect(() => {
+    if (localStorage.getItem(INCLUDE_PARTNERS_KEY) === 'true') setIncludePartnersState(true);
+  }, []);
+  const setIncludePartners = useCallback((value: boolean) => {
+    setIncludePartnersState(value);
+    try {
+      localStorage.setItem(INCLUDE_PARTNERS_KEY, String(value));
+    } catch {
+      // Private browsing / storage disabled — the toggle still works, it just
+      // won't be remembered.
+    }
+  }, []);
   const [autoPickSummary, setAutoPickSummary] = useState<IAutoPickSummary | null>(null);
   const [partnerMatches, setPartnerMatches] = useState<Record<string, IPartnerMatch[]>>({});
   const [partnerProgress, setPartnerProgress] = useState<{ done: number; total: number } | null>(null);
@@ -571,9 +588,16 @@ export default function BulkDuplicatePage() {
   const handleAutoPick = useCallback(async () => {
     setAutoPicking(true);
     try {
-      const groupsToPick = filteredDuplicates.filter(
-        (record) => !record.assets.some((a) => selectedAssets.has(a.id))
-      );
+      // A group counts as decided if either one of your copies OR a partner's
+      // copy has been picked — otherwise auto-pick would add a second keeper
+      // to a group you had already settled on the partner's copy.
+      const groupsToPick = filteredDuplicates.filter((record) => {
+        const ownPicked = record.assets.some((a) => selectedAssets.has(a.id));
+        const partnerPicked = record.assets.some((a) =>
+          (partnerMatches[a.id] || []).some((m) => selectedAssets.has(m.id))
+        );
+        return !ownPicked && !partnerPicked;
+      });
       const skipped = filteredDuplicates.length - groupsToPick.length;
       const assetIds = groupsToPick.flatMap((record) => record.assets.map((a) => a.id));
 
@@ -583,8 +607,19 @@ export default function BulkDuplicatePage() {
         return;
       }
 
-      const res = await API.post('/api/assets/duplicates/auto-pick', { assetIds });
-      const keeperIds: string[] = Object.values(res.keepers || {});
+      // Batched: a full library here is ~27k ids, which is about 1.01MB of
+      // JSON and lands just over Next's 1MB request-body limit — the whole
+      // call was being rejected before it reached the handler.
+      const BATCH = 2000;
+      const keeperIds: string[] = [];
+      let undecidedCount = 0;
+      for (let i = 0; i < assetIds.length; i += BATCH) {
+        const res = await API.post('/api/assets/duplicates/auto-pick', {
+          assetIds: assetIds.slice(i, i + BATCH),
+        });
+        keeperIds.push(...Object.values<string>(res.keepers || {}));
+        undecidedCount += (res.undecided || []).length;
+      }
 
       // Auto-pick chooses keepers, so the page has to be reading the selection
       // as "keep these" for the result to mean what it says.
@@ -595,7 +630,7 @@ export default function BulkDuplicatePage() {
         return next;
       });
 
-      const undecided = (res.undecided || []).length;
+      const undecided = undecidedCount;
       setAutoPickSummary({ picked: keeperIds.length, undecided, skipped });
       toast({
         title: 'Keepers picked',
@@ -606,7 +641,7 @@ export default function BulkDuplicatePage() {
     } finally {
       setAutoPicking(false);
     }
-  }, [filteredDuplicates, selectedAssets]);
+  }, [filteredDuplicates, selectedAssets, partnerMatches]);
 
   const handleDeleteAllSelected = async () => {
     if (selectedAssets.size === 0 || selectionMode !== 'discard') return;
