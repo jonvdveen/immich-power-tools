@@ -26,6 +26,11 @@ type AlbumTransferMode = 'always' | 'never' | 'ask';
 const INCLUDE_PARTNERS_KEY = 'duplicates_include_partners';
 const PARTNERS_CAN_WIN_KEY = 'duplicates_partners_can_win';
 
+/** Ids per write. The Immich proxy is a Next API route on the default 1MB body
+ *  parser, which a bulk id list blows past at roughly 26,000 ids — measured:
+ *  12,000 goes through, 30,000 comes back "413 Body exceeded 1mb limit". */
+const WRITE_BATCH = 5000;
+
 interface PendingDedup {
   keptIds: string[];
   discardedIds: string[];
@@ -453,8 +458,8 @@ export default function BulkDuplicatePage() {
           const existing = assetAlbums[id] || [];
           return !existing.some(a => a.albumId === albumId);
         });
-        if (assetsToAdd.length > 0) {
-          transferCalls.push(addAssetToAlbum(albumId, assetsToAdd));
+        for (let i = 0; i < assetsToAdd.length; i += WRITE_BATCH) {
+          transferCalls.push(addAssetToAlbum(albumId, assetsToAdd.slice(i, i + WRITE_BATCH)));
         }
       }
       await Promise.all(transferCalls);
@@ -465,16 +470,16 @@ export default function BulkDuplicatePage() {
       // which would abort the whole dedup. (Album add above is safe by
       // contrast -- it reports per-asset failures instead of throwing.)
       const ownKeptIds = keptIds.filter((id) => !partnerAssetIds.has(id));
-      if (ownKeptIds.length > 0) {
-        await updateAssets({ ids: ownKeptIds, duplicateId: null });
+      for (let i = 0; i < ownKeptIds.length; i += WRITE_BATCH) {
+        await updateAssets({ ids: ownKeptIds.slice(i, i + WRITE_BATCH), duplicateId: null });
       }
 
       // Belt and braces: nothing that isn't ours ever reaches a delete. The
       // selection paths already exclude partner copies from discard, so this
       // should be a no-op -- it is here so that stays true if they change.
       const deletableIds = discardedIds.filter((id) => !partnerAssetIds.has(id));
-      if (deletableIds.length > 0) {
-        await deleteAssets(deletableIds);
+      for (let i = 0; i < deletableIds.length; i += WRITE_BATCH) {
+        await deleteAssets(deletableIds.slice(i, i + WRITE_BATCH));
       }
 
       const removedIds = new Set([...keptIds, ...discardedIds]);
@@ -518,7 +523,11 @@ export default function BulkDuplicatePage() {
   };
 
   // Core dedup execution wrapped in useCallback to avoid stale closures
-  const executeDedupCb = useCallback(executeDedup, []);
+  // NOT memoised with an empty dep array (as it was): that froze this at the
+  // first render, where assetAlbums is {} and duplicates is [], so the album
+  // transfer would treat every keeper as missing from every album and re-add
+  // all of them, and the freed-space figure always read zero.
+  const executeDedupCb = executeDedup;
 
   // Initiate dedup with album move logic
   const initiateDedup = useCallback((
@@ -701,7 +710,17 @@ export default function BulkDuplicatePage() {
       keptIds.push(...ownKept, ...partnerKept);
       discardedIds.push(...record.assets.filter((a) => !selectedAssets.has(a.id)).map((a) => a.id));
     }
-    if (discardedIds.length === 0) return;
+    if (discardedIds.length === 0) {
+      // Never fail silently here: the user has just confirmed a destructive
+      // dialog, and returning without a word is indistinguishable from a bug.
+      toast({
+        title: 'Nothing to discard',
+        description: keptIds.length === 0
+          ? 'No keepers are picked, so there is nothing to act on.'
+          : `Every copy in the ${keepModeInfo.groups.toLocaleString()} decided group${keepModeInfo.groups === 1 ? '' : 's'} is marked KEEP, so nothing would be removed. Untick the copies you want gone, or re-run auto-pick.`,
+      });
+      return;
+    }
     initiateDedup(keptIds, discardedIds);
   };
 
@@ -964,7 +983,10 @@ export default function BulkDuplicatePage() {
           <div className="flex items-center gap-4 justify-between w-full">
             <p className="text-sm text-muted-foreground">
               {keepModeInfo.groups.toLocaleString()} group{keepModeInfo.groups === 1 ? '' : 's'} decided
-              {' · '}{keepModeInfo.discardCount.toLocaleString()} to discard
+              {' · '}
+              <strong className={keepModeInfo.discardCount === 0 ? 'text-amber-600 dark:text-amber-500' : 'text-foreground'}>
+                {keepModeInfo.discardCount.toLocaleString()} to discard
+              </strong>
               {keepModeInfo.discardSize > 0 && <> ({humanizeBytes(keepModeInfo.discardSize)})</>}
               {keepModeInfo.partnerGroups > 0 && (
                 <span className="ml-2 text-amber-600 dark:text-amber-500">
@@ -985,10 +1007,13 @@ export default function BulkDuplicatePage() {
               }
               onConfirm={handleDiscardNonKeepers}
               variant="destructive"
+              disabled={keepModeInfo.discardCount === 0}
             >
-              <Button variant="destructive" size="sm">
+              <Button variant="destructive" size="sm" disabled={keepModeInfo.discardCount === 0}>
                 <Trash2 className="w-4 h-4 mr-2" />
-                Discard non-keepers
+                {keepModeInfo.discardCount === 0
+                  ? 'Nothing to discard'
+                  : `Discard ${keepModeInfo.discardCount.toLocaleString()} non-keeper${keepModeInfo.discardCount === 1 ? '' : 's'}`}
               </Button>
             </AlertDialog>
           </div>
