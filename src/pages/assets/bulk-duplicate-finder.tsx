@@ -620,7 +620,7 @@ export default function BulkDuplicatePage() {
       const assetIds = payloadGroups.flatMap((g) => [...g.assetIds, ...g.partnerAssetIds]);
 
       if (assetIds.length === 0) {
-        setAutoPickSummary({ picked: 0, undecided: 0, skipped, partnerWins: 0 });
+        setAutoPickSummary({ picked: 0, undecided: 0, weakTiebreak: 0, skipped, partnerWins: 0 });
         toast({ title: 'Nothing to pick', description: 'Every visible group has already been decided.' });
         return;
       }
@@ -631,6 +631,7 @@ export default function BulkDuplicatePage() {
       const BATCH = 500; // groups per request
       const keeperIds: string[] = [];
       let undecidedCount = 0;
+      let weakCount = 0;
       let partnerWins = 0;
       for (let i = 0; i < payloadGroups.length; i += BATCH) {
         const res = await API.post('/api/assets/duplicates/auto-pick', {
@@ -638,6 +639,7 @@ export default function BulkDuplicatePage() {
         });
         keeperIds.push(...Object.values<string>(res.keepers || {}));
         undecidedCount += (res.undecided || []).length;
+        weakCount += (res.weakTiebreak || []).length;
         partnerWins += (res.partnerKeepers || []).length;
       }
 
@@ -651,10 +653,10 @@ export default function BulkDuplicatePage() {
       });
 
       const undecided = undecidedCount;
-      setAutoPickSummary({ picked: keeperIds.length, undecided, skipped, partnerWins });
+      setAutoPickSummary({ picked: keeperIds.length, undecided, weakTiebreak: weakCount, skipped, partnerWins });
       toast({
         title: 'Keepers picked',
-        description: `${keeperIds.length.toLocaleString()} picked${partnerWins ? `, ${partnerWins.toLocaleString()} keeping a partner's copy` : ''}${undecided ? `, ${undecided.toLocaleString()} too alike to call` : ''}. Nothing deleted — review, then act.`,
+        description: `${keeperIds.length.toLocaleString()} picked${partnerWins ? `, ${partnerWins.toLocaleString()} keeping a partner's copy` : ''}${weakCount ? `, ${weakCount.toLocaleString()} on a tiebreak` : ''}. Nothing deleted — review, then act.`,
       });
     } catch (e: any) {
       toast({ title: 'Auto-pick failed', description: e?.message || 'Unknown error', variant: 'destructive' });

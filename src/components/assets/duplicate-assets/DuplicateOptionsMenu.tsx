@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 
 export interface IAutoPickSummary {
   picked: number
+  weakTiebreak: number
   undecided: number
   skipped: number
   partnerWins: number
@@ -66,10 +67,12 @@ export default function DuplicateOptionsMenu({
                   when a photo is already held elsewhere.
                 </p>
               </div>
+              {/* Not disabled while scanning: the scan takes minutes on a large
+                  library, and switching off is how you cancel it. */}
               <Switch
                 checked={includePartners}
                 onCheckedChange={onIncludePartnersChange}
-                disabled={partnerScanning}
+                className="data-[state=unchecked]:bg-gray-300 dark:data-[state=unchecked]:bg-gray-600 data-[state=checked]:bg-blue-600 dark:data-[state=checked]:bg-blue-500"
               />
             </div>
             {/* Stated up front rather than discovered on a disabled button. */}
@@ -103,6 +106,7 @@ export default function DuplicateOptionsMenu({
                   checked={includePartners && partnersCanWin}
                   onCheckedChange={onPartnersCanWinChange}
                   disabled={!includePartners}
+                  className="data-[state=unchecked]:bg-gray-300 dark:data-[state=unchecked]:bg-gray-600 data-[state=checked]:bg-blue-600 dark:data-[state=checked]:bg-blue-500"
                 />
               </div>
             </div>
@@ -125,8 +129,10 @@ export default function DuplicateOptionsMenu({
             </Label>
             <p className="text-xs text-muted-foreground">
               Picks a keeper per group: highest resolution, then largest file, then
-              richest metadata (GPS, faces, rating, tags), then favourited. Groups whose
-              copies match on all of those are left for you to decide.
+              richest metadata (GPS, faces, rating, tags), then favourited. If copies
+              match on all of those, it falls back to the longer filename, then the
+              longest-held copy — so every group resolves to exactly one, the same way
+              each time.
             </p>
             <p className="text-xs text-muted-foreground">
               This only fills in the selection — <strong>nothing is deleted</strong>, and
@@ -147,9 +153,9 @@ export default function DuplicateOptionsMenu({
               <p className="text-xs text-muted-foreground">
                 Picked <strong>{autoPickSummary.picked.toLocaleString()}</strong> keeper
                 {autoPickSummary.picked === 1 ? '' : 's'}
-                {autoPickSummary.undecided > 0 && (
-                  <> · <strong>{autoPickSummary.undecided.toLocaleString()}</strong> too
-                  alike to call</>
+                {autoPickSummary.weakTiebreak > 0 && (
+                  <> · <strong>{autoPickSummary.weakTiebreak.toLocaleString()}</strong> settled
+                  on a tiebreak — worth a glance</>
                 )}
                 {autoPickSummary.partnerWins > 0 && (
                   <> · <strong>{autoPickSummary.partnerWins.toLocaleString()}</strong> keeping

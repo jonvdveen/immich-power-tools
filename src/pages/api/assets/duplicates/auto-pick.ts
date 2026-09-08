@@ -87,7 +87,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                WHERE ta."assetId" = a.id)                      AS tags,
              a."isFavorite"                                    AS "isFavorite",
              a."createdAt"                                     AS "createdAt",
-             encode(a.checksum, 'hex')                         AS checksum
+             encode(a.checksum, 'hex')                         AS checksum,
+             a."originalFileName"                              AS "originalFileName"
         FROM "asset" a
         LEFT JOIN "asset_exif" e ON e."assetId" = a.id
        WHERE a."ownerId" IN (SELECT id FROM allowed_owners)
@@ -113,6 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         isFavorite: !!r.isFavorite,
         createdAt: new Date(r.createdAt).getTime() || 0,
         checksum: String(r.checksum ?? ""),
+        originalFileName: String(r.originalFileName ?? ""),
       });
     }
 
