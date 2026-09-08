@@ -5,16 +5,20 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
+import { cn } from '@/lib/utils'
 
 export interface IAutoPickSummary {
   picked: number
   undecided: number
   skipped: number
+  partnerWins: number
 }
 
 interface DuplicateOptionsMenuProps {
   includePartners: boolean
   onIncludePartnersChange: (value: boolean) => void
+  partnersCanWin: boolean
+  onPartnersCanWinChange: (value: boolean) => void
   partnerScanning: boolean
   partnerProgress: { done: number; total: number } | null
   onAutoPick: () => void
@@ -29,6 +33,8 @@ interface DuplicateOptionsMenuProps {
 export default function DuplicateOptionsMenu({
   includePartners,
   onIncludePartnersChange,
+  partnersCanWin,
+  onPartnersCanWinChange,
   partnerScanning,
   partnerProgress,
   onAutoPick,
@@ -77,6 +83,30 @@ export default function DuplicateOptionsMenu({
                 photo. Auto-pick never does this on your behalf.
               </p>
             </div>
+            <div className={cn(
+              'ml-3 space-y-2 border-l pl-3',
+              !includePartners && 'opacity-50 pointer-events-none'
+            )}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">
+                    Let a partner&apos;s copy win auto-pick
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Include partner copies as keep candidates. If theirs is the better
+                    image by the same criteria, it is kept and{' '}
+                    <strong>every copy you own in that group is discarded</strong> — you
+                    would be relying on their library for that photo.
+                  </p>
+                </div>
+                <Switch
+                  checked={includePartners && partnersCanWin}
+                  onCheckedChange={onPartnersCanWinChange}
+                  disabled={!includePartners}
+                />
+              </div>
+            </div>
+
             {partnerScanning && (
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 size={12} className="animate-spin" />
@@ -120,6 +150,10 @@ export default function DuplicateOptionsMenu({
                 {autoPickSummary.undecided > 0 && (
                   <> · <strong>{autoPickSummary.undecided.toLocaleString()}</strong> too
                   alike to call</>
+                )}
+                {autoPickSummary.partnerWins > 0 && (
+                  <> · <strong>{autoPickSummary.partnerWins.toLocaleString()}</strong> keeping
+                  a partner&apos;s copy</>
                 )}
                 {autoPickSummary.skipped > 0 && (
                   <> · <strong>{autoPickSummary.skipped.toLocaleString()}</strong> already

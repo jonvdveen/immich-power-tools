@@ -6,15 +6,21 @@ import { getCurrentUser } from "@/handlers/serverUtils/user.utils";
 import { autoPickKeepers, IDuplicateCandidate } from "@/lib/duplicates/autoPick";
 
 /**
- * Propose a keeper for each duplicate group among the given assets.
+ * Propose a keeper for each duplicate group.
  *
  * Ranked server-side because two of the signals (tag count, and when the asset
- * entered the library) aren't in Immich's /duplicates payload, and shipping
- * them to the browser for every asset in every group would cost more than
- * doing the ranking here.
+ * entered the library) aren't in Immich's /duplicates payload.
+ *
+ * Groups arrive from the client rather than being derived here, because a
+ * partner's copy is not in the same Immich duplicate group -- it has its own
+ * duplicateId, or none -- so only the caller knows which partner assets belong
+ * with which group. Those ids are still verified here: an asset owned by
+ * neither the user nor one of their partners is dropped, whatever the client
+ * claims.
  *
  * Read-only: it returns a proposed selection and changes nothing.
  */
+
 export const config = {
   api: {
     // The client batches, but a hand-rolled call shouldn't be silently
@@ -23,25 +29,53 @@ export const config = {
   },
 };
 
+interface IGroupInput {
+  duplicateId: string;
+  assetIds: string[];
+  /** Only sent when the user has opted into partner copies winning. */
+  partnerAssetIds?: string[];
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 
   const currentUser = await getCurrentUser(req);
   if (!currentUser?.id) return res.status(401).json({ error: "Not authenticated" });
 
-  const assetIds: unknown = req.body?.assetIds;
-  if (!Array.isArray(assetIds) || assetIds.some((id) => typeof id !== "string")) {
-    return res.status(400).json({ error: "assetIds must be an array of strings" });
+  const groups: unknown = req.body?.groups;
+  if (!Array.isArray(groups)) return res.status(400).json({ error: "groups must be an array" });
+
+  const parsed = groups as IGroupInput[];
+  if (parsed.some((g) => typeof g?.duplicateId !== "string" || !Array.isArray(g?.assetIds))) {
+    return res.status(400).json({ error: "each group needs a duplicateId and assetIds" });
   }
-  if (assetIds.length === 0) return res.status(200).json({ keepers: {}, undecided: [], reasons: {} });
+
+  const empty = { keepers: {}, undecided: [], reasons: {}, partnerKeepers: [] };
+  if (parsed.length === 0) return res.status(200).json(empty);
+
+  // assetId -> the group it was submitted under. A partner's copy can match
+  // more than one group; first claim wins, which is enough for ranking.
+  const groupOf = new Map<string, string>();
+  const partnerClaimed = new Set<string>();
+  for (const g of parsed) {
+    for (const id of g.assetIds) if (!groupOf.has(id)) groupOf.set(id, g.duplicateId);
+    for (const id of g.partnerAssetIds ?? []) {
+      if (!groupOf.has(id)) groupOf.set(id, g.duplicateId);
+      partnerClaimed.add(id);
+    }
+  }
+  const allIds = [...groupOf.keys()];
+  if (allIds.length === 0) return res.status(200).json(empty);
 
   try {
-    // Scoped to the caller's own assets: a partner's copy can never be the
-    // keeper, because keeping it would discard every copy the user actually
-    // owns and leave them relying on someone else's library.
     const { rows } = await db.execute(sql`
+      WITH allowed_owners AS (
+        SELECT ${currentUser.id}::uuid AS id
+        UNION
+        SELECT p."sharedById" FROM "partner" p WHERE p."sharedWithId" = ${currentUser.id}
+      )
       SELECT a.id::text                                        AS id,
-             a."duplicateId"::text                             AS "duplicateId",
+             a."ownerId"::text                                 AS "ownerId",
              COALESCE(e."exifImageWidth", 0)
                * COALESCE(e."exifImageHeight", 0)              AS pixels,
              COALESCE(e."fileSizeInByte", 0)                   AS bytes,
@@ -56,27 +90,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
              encode(a.checksum, 'hex')                         AS checksum
         FROM "asset" a
         LEFT JOIN "asset_exif" e ON e."assetId" = a.id
-       WHERE a."ownerId" = ${currentUser.id}
+       WHERE a."ownerId" IN (SELECT id FROM allowed_owners)
          AND a."deletedAt" IS NULL
-         AND a."duplicateId" IS NOT NULL
-         AND a.id::text IN (${sql.join(assetIds.map((id) => sql`${id}`), sql`, `)})
+         AND a.id IN (${sql.join(allIds.map((id) => sql`${id}::uuid`), sql`, `)})
     `);
 
-    const candidates: IDuplicateCandidate[] = (rows as any[]).map((r) => ({
-      id: r.id,
-      duplicateId: r.duplicateId,
-      pixels: Number(r.pixels) || 0,
-      bytes: Number(r.bytes) || 0,
-      hasGps: !!r.hasGps,
-      faces: Number(r.faces) || 0,
-      rating: Number(r.rating) || 0,
-      tags: Number(r.tags) || 0,
-      isFavorite: !!r.isFavorite,
-      createdAt: new Date(r.createdAt).getTime() || 0,
-      checksum: String(r.checksum ?? ""),
-    }));
+    const candidates: IDuplicateCandidate[] = [];
+    const ownerOf = new Map<string, string>();
+    for (const r of rows as any[]) {
+      const duplicateId = groupOf.get(r.id);
+      if (!duplicateId) continue;
+      ownerOf.set(r.id, r.ownerId);
+      candidates.push({
+        id: r.id,
+        duplicateId,
+        pixels: Number(r.pixels) || 0,
+        bytes: Number(r.bytes) || 0,
+        hasGps: !!r.hasGps,
+        faces: Number(r.faces) || 0,
+        rating: Number(r.rating) || 0,
+        tags: Number(r.tags) || 0,
+        isFavorite: !!r.isFavorite,
+        createdAt: new Date(r.createdAt).getTime() || 0,
+        checksum: String(r.checksum ?? ""),
+      });
+    }
 
-    return res.status(200).json(autoPickKeepers(candidates));
+    const result = autoPickKeepers(candidates);
+
+    // Flag groups whose winner belongs to a partner: those discard every copy
+    // the user owns, so the UI has to say so rather than just tick a box.
+    const partnerKeepers = Object.entries(result.keepers)
+      .filter(([, assetId]) => partnerClaimed.has(assetId) && ownerOf.get(assetId) !== currentUser.id)
+      .map(([duplicateId]) => duplicateId);
+
+    return res.status(200).json({ ...result, partnerKeepers });
   } catch (error: any) {
     return res.status(500).json({ error: error?.message });
   }

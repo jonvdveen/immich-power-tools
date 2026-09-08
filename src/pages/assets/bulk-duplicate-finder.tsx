@@ -24,6 +24,7 @@ type AlbumTransferMode = 'always' | 'never' | 'ask';
 
 /** Remembered per browser, same as this app's other view preferences. */
 const INCLUDE_PARTNERS_KEY = 'duplicates_include_partners';
+const PARTNERS_CAN_WIN_KEY = 'duplicates_partners_can_win';
 
 interface PendingDedup {
   keptIds: string[];
@@ -49,10 +50,16 @@ export default function BulkDuplicatePage() {
   const [includePartners, setIncludePartnersState] = useState(false);
   const [partnerScanning, setPartnerScanning] = useState(false);
   const [autoPicking, setAutoPicking] = useState(false);
+  const [partnersCanWin, setPartnersCanWinState] = useState(false);
   // Hydrated after mount rather than in the initial state: localStorage does
   // not exist during SSR, and reading it inline would mismatch the server HTML.
   useEffect(() => {
     if (localStorage.getItem(INCLUDE_PARTNERS_KEY) === 'true') setIncludePartnersState(true);
+    if (localStorage.getItem(PARTNERS_CAN_WIN_KEY) === 'true') setPartnersCanWinState(true);
+  }, []);
+  const setPartnersCanWin = useCallback((value: boolean) => {
+    setPartnersCanWinState(value);
+    try { localStorage.setItem(PARTNERS_CAN_WIN_KEY, String(value)); } catch { /* storage disabled */ }
   }, []);
   const setIncludePartners = useCallback((value: boolean) => {
     setIncludePartnersState(value);
@@ -599,10 +606,21 @@ export default function BulkDuplicatePage() {
         return !ownPicked && !partnerPicked;
       });
       const skipped = filteredDuplicates.length - groupsToPick.length;
-      const assetIds = groupsToPick.flatMap((record) => record.assets.map((a) => a.id));
+
+      // Partner copies only enter the ranking when the user has asked for it —
+      // a partner winning discards every copy they own in that group.
+      const letPartnersWin = includePartners && partnersCanWin;
+      const payloadGroups = groupsToPick.map((record) => ({
+        duplicateId: record.duplicateId,
+        assetIds: record.assets.map((a) => a.id),
+        partnerAssetIds: letPartnersWin
+          ? Array.from(new Set(record.assets.flatMap((a) => (partnerMatches[a.id] || []).map((m) => m.id))))
+          : [],
+      }));
+      const assetIds = payloadGroups.flatMap((g) => [...g.assetIds, ...g.partnerAssetIds]);
 
       if (assetIds.length === 0) {
-        setAutoPickSummary({ picked: 0, undecided: 0, skipped });
+        setAutoPickSummary({ picked: 0, undecided: 0, skipped, partnerWins: 0 });
         toast({ title: 'Nothing to pick', description: 'Every visible group has already been decided.' });
         return;
       }
@@ -610,15 +628,17 @@ export default function BulkDuplicatePage() {
       // Batched: a full library here is ~27k ids, which is about 1.01MB of
       // JSON and lands just over Next's 1MB request-body limit — the whole
       // call was being rejected before it reached the handler.
-      const BATCH = 2000;
+      const BATCH = 500; // groups per request
       const keeperIds: string[] = [];
       let undecidedCount = 0;
-      for (let i = 0; i < assetIds.length; i += BATCH) {
+      let partnerWins = 0;
+      for (let i = 0; i < payloadGroups.length; i += BATCH) {
         const res = await API.post('/api/assets/duplicates/auto-pick', {
-          assetIds: assetIds.slice(i, i + BATCH),
+          groups: payloadGroups.slice(i, i + BATCH),
         });
         keeperIds.push(...Object.values<string>(res.keepers || {}));
         undecidedCount += (res.undecided || []).length;
+        partnerWins += (res.partnerKeepers || []).length;
       }
 
       // Auto-pick chooses keepers, so the page has to be reading the selection
@@ -631,17 +651,57 @@ export default function BulkDuplicatePage() {
       });
 
       const undecided = undecidedCount;
-      setAutoPickSummary({ picked: keeperIds.length, undecided, skipped });
+      setAutoPickSummary({ picked: keeperIds.length, undecided, skipped, partnerWins });
       toast({
         title: 'Keepers picked',
-        description: `${keeperIds.length.toLocaleString()} picked${undecided ? `, ${undecided.toLocaleString()} too alike to call` : ''}. Nothing deleted — review, then act.`,
+        description: `${keeperIds.length.toLocaleString()} picked${partnerWins ? `, ${partnerWins.toLocaleString()} keeping a partner's copy` : ''}${undecided ? `, ${undecided.toLocaleString()} too alike to call` : ''}. Nothing deleted — review, then act.`,
       });
     } catch (e: any) {
       toast({ title: 'Auto-pick failed', description: e?.message || 'Unknown error', variant: 'destructive' });
     } finally {
       setAutoPicking(false);
     }
-  }, [filteredDuplicates, selectedAssets, partnerMatches]);
+  }, [filteredDuplicates, selectedAssets, partnerMatches, includePartners, partnersCanWin]);
+
+  /** In keep mode, every group that has a keeper picked: what would be
+   *  discarded if the user applied it. Groups with no pick are untouched. */
+  const keepModeInfo = useMemo(() => {
+    if (selectionMode !== 'keep') return { groups: 0, discardCount: 0, discardSize: 0, partnerGroups: 0 };
+    let groups = 0, discardCount = 0, discardSize = 0, partnerGroups = 0;
+    for (const record of filteredDuplicates) {
+      const ownKept = record.assets.filter((a) => selectedAssets.has(a.id));
+      const partnerKept = record.assets.flatMap((a) =>
+        (partnerMatches[a.id] || []).filter((m) => selectedAssets.has(m.id))
+      );
+      if (ownKept.length === 0 && partnerKept.length === 0) continue;
+      groups++;
+      if (ownKept.length === 0) partnerGroups++;
+      for (const a of record.assets) {
+        if (selectedAssets.has(a.id)) continue;
+        discardCount++;
+        discardSize += a.exifInfo?.fileSizeInByte || 0;
+      }
+    }
+    return { groups, discardCount, discardSize, partnerGroups };
+  }, [selectionMode, filteredDuplicates, selectedAssets, partnerMatches]);
+
+  /** Apply every picked keeper at once. Without this, auto-picking thousands of
+   *  groups would leave the user clicking each one. */
+  const handleDiscardNonKeepers = async () => {
+    const keptIds: string[] = [];
+    const discardedIds: string[] = [];
+    for (const record of filteredDuplicates) {
+      const ownKept = record.assets.filter((a) => selectedAssets.has(a.id)).map((a) => a.id);
+      const partnerKept = Array.from(new Set(record.assets.flatMap((a) =>
+        (partnerMatches[a.id] || []).filter((m) => selectedAssets.has(m.id)).map((m) => m.id)
+      )));
+      if (ownKept.length === 0 && partnerKept.length === 0) continue;
+      keptIds.push(...ownKept, ...partnerKept);
+      discardedIds.push(...record.assets.filter((a) => !selectedAssets.has(a.id)).map((a) => a.id));
+    }
+    if (discardedIds.length === 0) return;
+    initiateDedup(keptIds, discardedIds);
+  };
 
   const handleDeleteAllSelected = async () => {
     if (selectedAssets.size === 0 || selectionMode !== 'discard') return;
@@ -746,6 +806,8 @@ export default function BulkDuplicatePage() {
             <DuplicateOptionsMenu
               includePartners={includePartners}
               onIncludePartnersChange={setIncludePartners}
+              partnersCanWin={partnersCanWin}
+              onPartnersCanWinChange={setPartnersCanWin}
               partnerScanning={partnerScanning}
               partnerProgress={partnerProgress}
               onAutoPick={handleAutoPick}
@@ -893,6 +955,42 @@ export default function BulkDuplicatePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {selectionMode === 'keep' && keepModeInfo.groups > 0 && (
+        <FloatingBar>
+          <div className="flex items-center gap-4 justify-between w-full">
+            <p className="text-sm text-muted-foreground">
+              {keepModeInfo.groups.toLocaleString()} group{keepModeInfo.groups === 1 ? '' : 's'} decided
+              {' · '}{keepModeInfo.discardCount.toLocaleString()} to discard
+              {keepModeInfo.discardSize > 0 && <> ({humanizeBytes(keepModeInfo.discardSize)})</>}
+              {keepModeInfo.partnerGroups > 0 && (
+                <span className="ml-2 text-amber-600 dark:text-amber-500">
+                  · {keepModeInfo.partnerGroups.toLocaleString()} keeping a partner&apos;s copy
+                </span>
+              )}
+            </p>
+            <AlertDialog
+              title="Discard the copies you didn't keep?"
+              description={
+                `This deletes ${keepModeInfo.discardCount.toLocaleString()} asset${keepModeInfo.discardCount === 1 ? '' : 's'} across ` +
+                `${keepModeInfo.groups.toLocaleString()} group${keepModeInfo.groups === 1 ? '' : 's'}` +
+                (keepModeInfo.discardSize > 0 ? `, saving ${humanizeBytes(keepModeInfo.discardSize)}` : '') +
+                (keepModeInfo.partnerGroups > 0
+                  ? `. In ${keepModeInfo.partnerGroups.toLocaleString()} of them the keeper is a PARTNER's copy, so every copy you own in those groups is deleted and you will be relying on their library for that photo.`
+                  : '.') +
+                ' Groups with nothing picked are left alone. This cannot be undone.'
+              }
+              onConfirm={handleDiscardNonKeepers}
+              variant="destructive"
+            >
+              <Button variant="destructive" size="sm">
+                <Trash2 className="w-4 h-4 mr-2" />
+                Discard non-keepers
+              </Button>
+            </AlertDialog>
+          </div>
+        </FloatingBar>
       )}
 
       {selectionMode === 'discard' && (
