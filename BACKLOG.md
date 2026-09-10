@@ -121,6 +121,14 @@ Implementation notes worth keeping:
   found and fixed, all verified live; see the follow-up commit. Still NOT
   exercised for real: tag and stack have never been applied to actual assets,
   and auto-pick has not been run at scale on this screen.
+- **DEDUP-6 — Move albums is still in the wrong place.** The filter bar's search
+  box, Albums dropdown and All/Same-library/Cross-library chips were removed
+  2026-09-09 (user: "I'm failing to understand the utility" — correct; the
+  source chips could only show the same groups under three labels until Phase 2
+  exists, and filtering a duplicate list by name or album isn't how the work
+  gets done). Move albums stayed because it prevents a real data problem, but it
+  is an apply-time setting sitting in what used to be a filter row. Move it in
+  beside the disposition in Options.
 - **DEDUP-5 — the ranking is a loaded gun.** Stephanie's saved config has Owner
   at position 1 set to "Prefer partner's copy". Inert today (both partner
   toggles off), but flipping them makes auto-pick keep the partner's copy in

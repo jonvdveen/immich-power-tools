@@ -1,7 +1,6 @@
-import { Layers, RefreshCw, Search, Shield, Tag, Trash2, Users, X } from 'lucide-react'
+import { Layers, RefreshCw, Search, Shield, Tag, Trash2 } from 'lucide-react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import AlbumFilterDropdown from '@/components/assets/duplicate-assets/AlbumFilterDropdown'
 import AlbumTransferDialog from '@/components/assets/duplicate-assets/AlbumTransferDialog'
 import DeDuplicatorOptions, { IAutoPickSummary } from '@/components/assets/duplicate-assets/DeDuplicatorOptions'
 import VirtualizedDuplicateList from '@/components/assets/duplicate-assets/VirtualizedDuplicateList'
@@ -10,7 +9,6 @@ import FloatingBar from '@/components/shared/FloatingBar'
 import Header from '@/components/shared/Header'
 import { AlertDialog } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import Loader from '@/components/ui/loader'
 import { ToastAction } from '@/components/ui/toast'
 import { toast } from '@/components/ui/use-toast'
@@ -34,7 +32,6 @@ import { cn } from '@/lib/utils'
 import { IDuplicateAssetRecord, IPartnerMatch } from '@/types/asset'
 
 type AlbumTransferMode = 'always' | 'never' | 'ask'
-type SourceFilter = 'all' | 'same-library' | 'cross-library'
 
 /** Remembered per browser — a view preference, unlike the ranking. */
 const INCLUDE_PARTNERS_KEY = 'dedupe_include_partners'
@@ -80,11 +77,6 @@ export default function DeDuplicatorPage() {
   const [assetAlbums, setAssetAlbums] = useState<Record<string, IAssetAlbumInfo[]>>({})
   const [albumTransferMode, setAlbumTransferMode] = useState<AlbumTransferMode>('always')
   const [pendingDedup, setPendingDedup] = useState<PendingDedup | null>(null)
-
-  const [searchInputText, setSearchInputText] = useState('')
-  const [searchText, setSearchText] = useState('')
-  const [selectedAlbumIds, setSelectedAlbumIds] = useState<Set<string>>(new Set())
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   const [disposition, setDispositionState] = useState<Disposition>('trash')
   const [tagName, setTagNameState] = useState(DEFAULT_TAG_NAME)
@@ -204,9 +196,6 @@ export default function DeDuplicatorPage() {
       const records = await listDuplicates()
       setDuplicates(records)
       setSelectedAssets(new Set())
-      setSearchInputText('')
-      setSearchText('')
-      setSelectedAlbumIds(new Set())
 
       const allIds = records.flatMap((r: IDuplicateAssetRecord) => r.assets.map((a) => a.id))
       setAssetAlbums(allIds.length > 0 ? await getAlbumsByAssetIds(allIds) : {})
@@ -230,11 +219,6 @@ export default function DeDuplicatorPage() {
     window.addEventListener('resize', updateHeight)
     return () => window.removeEventListener('resize', updateHeight)
   }, [duplicates])
-
-  useEffect(() => {
-    const timer = setTimeout(() => setSearchText(searchInputText), 200)
-    return () => clearTimeout(timer)
-  }, [searchInputText])
 
   /**
    * Escape clears the selection -- but ONLY when it isn't already dismissing
@@ -284,49 +268,15 @@ export default function DeDuplicatorPage() {
 
   // --------------------------------------------------------------- filtering
 
-  const allAlbumOptions = useMemo(() => {
-    const seen = new Map<string, string>()
-    Object.values(assetAlbums).forEach((albums) => {
-      albums.forEach((a) => { if (!seen.has(a.albumId)) seen.set(a.albumId, a.albumName) })
-    })
-    return Array.from(seen, ([value, label]) => ({ label, value }))
-      .sort((a, b) => a.label.localeCompare(b.label))
-  }, [assetAlbums])
-
-  const hasActiveFilters = searchText.length > 0 || selectedAlbumIds.size > 0 || sourceFilter !== 'all'
-
-  const visibleDuplicates = useMemo(() => {
-    const lowerSearch = searchText.toLowerCase()
-
-    return duplicates.filter((record) => {
-      if (skipped.has(record.duplicateId)) return false
-
-      if (sourceFilter !== 'all') {
-        const hasPartner = record.assets.some((a) => (partnerMatches[a.id] || []).length > 0)
-        if (sourceFilter === 'cross-library' && !hasPartner) return false
-        if (sourceFilter === 'same-library' && hasPartner) return false
-      }
-
-      if (searchText.length === 0 && selectedAlbumIds.size === 0) return true
-
-      return record.assets.some((asset) => {
-        if (searchText.length > 0) {
-          const fields = [
-            asset.originalFileName, asset.originalPath, asset.exifInfo?.city,
-            asset.exifInfo?.state, asset.exifInfo?.country, asset.exifInfo?.description,
-          ]
-          if (!fields.some((f) => f && f.toLowerCase().includes(lowerSearch))) return false
-        }
-        if (selectedAlbumIds.size > 0) {
-          const list = assetAlbums[asset.id] || []
-          if (!list.some((a) => selectedAlbumIds.has(a.albumId))) return false
-        }
-        return true
-      })
-    })
-  }, [duplicates, skipped, sourceFilter, partnerMatches, searchText, selectedAlbumIds, assetAlbums])
-
-  useEffect(() => { setLastSelectedIndex(-1) }, [searchText, selectedAlbumIds, sourceFilter])
+  /** Everything except the groups you've skipped. Search, album and
+   *  same/cross-library filters were removed: with cross-library scanning not
+   *  built yet the source chips could only ever show the same 270 groups under
+   *  three different labels, and narrowing a duplicate list by filename or
+   *  album turned out not to be how the work actually gets done. */
+  const visibleDuplicates = useMemo(
+    () => duplicates.filter((record) => !skipped.has(record.duplicateId)),
+    [duplicates, skipped]
+  )
 
   const allAssetIds = useMemo(
     () => visibleDuplicates.flatMap((r) => r.assets.map((a) => a.id)),
@@ -798,12 +748,6 @@ export default function DeDuplicatorPage() {
   const actionVerb = disposition === 'tag' ? 'Tag' : disposition === 'stack' ? 'Stack' : 'Trash'
   const ActionIcon = disposition === 'tag' ? Tag : disposition === 'stack' ? Layers : Trash2
 
-  const sourceChips: { value: SourceFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'same-library', label: 'Same library' },
-    { value: 'cross-library', label: 'Cross-library' },
-  ]
-
   return (
     <PageLayout>
       <Header
@@ -912,48 +856,12 @@ export default function DeDuplicatorPage() {
 
         {!loading && !error && duplicates.length > 0 && (
           <>
-            {/* Wraps: with the Move-albums control shown (trash only) this row
-                is wider than a ~1000px viewport, and without wrapping it pushed
-                the group count and Clear-filters off the right edge and gave the
-                whole page a horizontal scrollbar. */}
+            {/* Move albums is not a filter -- it decides whether the keeper is
+                added to an album only the discarded copy belonged to, so that
+                trashing a duplicate doesn't quietly leave a hole in that album.
+                It sits here until it moves in beside the other apply-time
+                settings. Wraps because it and the count overflow ~1000px. */}
             <div className="flex flex-wrap items-center gap-3 border-b px-6 py-2">
-              <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search filename, path, location..."
-                  value={searchInputText}
-                  onChange={(e) => setSearchInputText(e.target.value)}
-                  className="h-8 w-64 pl-8 text-sm"
-                />
-              </div>
-
-              {/* Source chips. Cross-library only has anything in it once
-                  partner comparison is on, so the chip says why when it's not. */}
-              <div className="flex overflow-hidden rounded-md border">
-                {sourceChips.map((chip) => (
-                  <Button
-                    key={chip.value}
-                    variant={sourceFilter === chip.value ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-8 rounded-none border-0 px-2 text-xs"
-                    onClick={() => setSourceFilter(chip.value)}
-                    disabled={chip.value === 'cross-library' && !includePartners}
-                    title={chip.value === 'cross-library' && !includePartners
-                      ? 'Turn on "Compare against partner photos" in Options'
-                      : undefined}
-                  >
-                    {chip.value === 'cross-library' && <Users size={11} className="mr-1" />}
-                    {chip.label}
-                  </Button>
-                ))}
-              </div>
-
-              <AlbumFilterDropdown
-                options={allAlbumOptions}
-                selectedIds={selectedAlbumIds}
-                onSelectionChange={setSelectedAlbumIds}
-              />
-
               {disposition === 'trash' && (
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">Move albums:</span>
@@ -976,27 +884,10 @@ export default function DeDuplicatorPage() {
               <div className="flex-1" />
 
               <span className="text-sm text-muted-foreground">
-                {hasActiveFilters || skipped.size > 0
-                  ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups`
+                {skipped.size > 0
+                  ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups · ${skipped.size.toLocaleString()} skipped`
                   : `${duplicates.length.toLocaleString()} groups`}
-                {skipped.size > 0 && ` · ${skipped.size.toLocaleString()} skipped`}
               </span>
-
-              {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => {
-                    setSearchInputText('')
-                    setSearchText('')
-                    setSelectedAlbumIds(new Set())
-                    setSourceFilter('all')
-                  }}
-                >
-                  <X size={14} className="mr-1" /> Clear filters
-                </Button>
-              )}
             </div>
 
             <div ref={containerRef} style={{ height: containerHeight }} className="overflow-hidden">
