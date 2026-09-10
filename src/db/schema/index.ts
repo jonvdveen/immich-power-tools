@@ -3,3 +3,4 @@ export * from "./apiKeys.schema";
 export * from "./importJobs.schema";
 export * from "./workflows.schema";
 export * from "./locationFavorites.schema";
+export * from "./dedupe.schema";

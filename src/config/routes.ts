@@ -18,6 +18,12 @@ export const TAG_ASSETS_PATH = (tagId: string) => BASE_PROXY_ENDPOINT + "/tags/"
 export const TAG_PATH = (tagId: string) => BASE_PROXY_ENDPOINT + "/tags/" + tagId;
 export const DELETE_TAG_PATH = (tagId: string) => BASE_API_ENDPOINT + "/tags/" + tagId;
 export const MOVE_TAG_PATH = (tagId: string) => BASE_API_ENDPOINT + "/tags/" + tagId + "/move";
+// Create-or-get by name (PUT is Immich's upsert; POST /tags 400s on an
+// existing name) and the bulk tag/asset join, both proxied.
+export const UPSERT_TAGS_PATH = BASE_PROXY_ENDPOINT + "/tags";
+export const BULK_TAG_ASSETS_PATH = BASE_PROXY_ENDPOINT + "/tags/assets";
+// Stacking: POST /stacks with { assetIds }, first id becomes the primary.
+export const CREATE_STACK_PATH = BASE_PROXY_ENDPOINT + "/stacks";
 export const SEARCH_PEOPLE_PATH = BASE_PROXY_ENDPOINT + "/search/person";
 export const SIMILAR_FACES_PATH = (id: string) => BASE_API_ENDPOINT + "/people/" + id + "/similar-faces";
 export const PERSON_THUBNAIL_PATH = (id: string) => BASE_PROXY_ENDPOINT + "/thumbnail/" + id;
@@ -134,3 +140,8 @@ export const WORKFLOW_RUNS_PATH = (id: string) => BASE_API_ENDPOINT + "/workflow
 export const EXPORT_WORKFLOW_PATH = (id: string) => BASE_API_ENDPOINT + "/workflows/" + id + "/export";
 export const IMPORT_WORKFLOW_PATH = BASE_API_ENDPOINT + "/workflows/import";
 export const WORKFLOW_RUN_DETAIL_PATH = (id: string, runId: string) => BASE_API_ENDPOINT + "/workflows/" + id + "/runs/" + runId;
+// De-Duplicator: per-account keeper ranking and "not duplicates" dismissals,
+// both stored in this app's own SQLite rather than in Immich.
+export const DEDUPE_RANKING_PATH = BASE_API_ENDPOINT + "/dedupe/ranking";
+export const DEDUPE_DISMISSALS_PATH = BASE_API_ENDPOINT + "/dedupe/dismissals";
+export const SETTINGS_KV_PATH = (key: string) => BASE_API_ENDPOINT + "/settings/kv/" + key;

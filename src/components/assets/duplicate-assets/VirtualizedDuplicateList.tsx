@@ -3,6 +3,7 @@ import { VariableSizeList as List } from 'react-window'
 import { IDuplicateAssetRecord, IPartnerMatch } from '@/types/asset'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
 import DuplicateAssetRecord from './DuplicateAssetRecord'
+import { Disposition } from '@/lib/duplicates/disposition'
 
 interface VirtualizedDuplicateListProps {
   duplicates: IDuplicateAssetRecord[]
@@ -15,6 +16,8 @@ interface VirtualizedDuplicateListProps {
   selectionMode: 'keep' | 'discard'
   assetAlbums: Record<string, IAssetAlbumInfo[]>
   partnerMatches: Record<string, IPartnerMatch[]>
+  disposition?: Disposition
+  onSkipRecord?: (record: IDuplicateAssetRecord) => void
 }
 
 interface ListItemProps {
@@ -30,11 +33,13 @@ interface ListItemProps {
     selectionMode: 'keep' | 'discard'
     assetAlbums: Record<string, IAssetAlbumInfo[]>
     partnerMatches: Record<string, IPartnerMatch[]>
+    disposition?: Disposition
+    onSkipRecord?: (record: IDuplicateAssetRecord) => void
   }
 }
 
 const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
-  const { duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected, onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches } = data
+  const { duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected, onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches, disposition, onSkipRecord } = data
   const record = duplicates[index]
 
   return (
@@ -50,6 +55,8 @@ const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
           selectionMode={selectionMode}
           assetAlbums={assetAlbums}
           partnerMatches={partnerMatches}
+          disposition={disposition}
+          onSkipRecord={onSkipRecord}
         />
       </div>
     </div>
@@ -81,7 +88,9 @@ export default function VirtualizedDuplicateList({
   height,
   selectionMode,
   assetAlbums,
-  partnerMatches
+  partnerMatches,
+  disposition,
+  onSkipRecord
 }: VirtualizedDuplicateListProps) {
   const listRef = useRef<List>(null)
 
@@ -106,7 +115,9 @@ export default function VirtualizedDuplicateList({
     onKeepAllInRecord,
     selectionMode,
     assetAlbums,
-    partnerMatches
+    partnerMatches,
+    disposition,
+    onSkipRecord
   }
 
   // For better performance with many items, we'll use a custom implementation

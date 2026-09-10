@@ -57,6 +57,13 @@
       "when": 1784263127540,
       "tag": "0007_bored_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788932218280,
+      "tag": "0008_sharp_gideon",
+      "breakpoints": true
     }
   ]
 }

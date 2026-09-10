@@ -4,6 +4,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { db } from "@/config/db";
 import { getCurrentUser } from "@/handlers/serverUtils/user.utils";
 import { autoPickKeepers, IDuplicateCandidate } from "@/lib/duplicates/autoPick";
+import { normalizeRanking } from "@/lib/duplicates/ranking";
+import { getRanking } from "@/lib/duplicates/rankingStore";
 
 /**
  * Propose a keeper for each duplicate group.
@@ -50,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "each group needs a duplicateId and assetIds" });
   }
 
-  const empty = { keepers: {}, undecided: [], reasons: {}, partnerKeepers: [] };
+  const empty = { keepers: {}, undecided: [], reasons: {}, weakTiebreak: [], guarded: {}, partnerKeepers: [] };
   if (parsed.length === 0) return res.status(200).json(empty);
 
   // assetId -> the group it was submitted under. A partner's copy can match
@@ -80,6 +82,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                * COALESCE(e."exifImageHeight", 0)              AS pixels,
              COALESCE(e."fileSizeInByte", 0)                   AS bytes,
              (e.latitude IS NOT NULL)                          AS "hasGps",
+             (e.description IS NOT NULL AND e.description <> '')
+                                                               AS "hasDescription",
              (SELECT count(*) FROM "asset_face" af
                WHERE af."assetId" = a.id)                      AS faces,
              COALESCE(e.rating, 0)                             AS rating,
@@ -112,13 +116,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         rating: Number(r.rating) || 0,
         tags: Number(r.tags) || 0,
         isFavorite: !!r.isFavorite,
+        hasDescription: !!r.hasDescription,
+        isOwn: r.ownerId === currentUser.id,
         createdAt: new Date(r.createdAt).getTime() || 0,
         checksum: String(r.checksum ?? ""),
         originalFileName: String(r.originalFileName ?? ""),
       });
     }
 
-    const result = autoPickKeepers(candidates);
+    // The client sends its unsaved edits so the editor can be previewed
+    // without committing; anything else falls back to the stored config.
+    const ranking = Array.isArray(req.body?.ranking)
+      ? normalizeRanking(req.body.ranking)
+      : await getRanking(currentUser.id);
+
+    const result = autoPickKeepers(candidates, ranking);
 
     // Flag groups whose winner belongs to a partner: those discard every copy
     // the user owns, so the UI has to say so rather than just tick a box.

@@ -57,6 +57,69 @@ follow-up when unblocked; delete this note once both are open.
 Note upstream tracks a stale `package-lock.json` (they build with bun); left
 untouched.
 
+## De-Duplicator (`/assets/de-duplicator`) — supersedes Bulk Duplicate Finder
+
+**Phase 1 built 2026-09-08/09, deployed to the local stack, NOT committed and
+NOT released.** Spec (including the measured calibration data behind Phase 2's
+confidence bands) lives in `docs/DEDUPLICATOR_SPEC.md`.
+
+Why the new screen exists: the old page could only permanently delete, ranked
+keepers on a chain hardcoded in the source, and had no way to act on a photo
+already held in a partner's library. Phase 1 fixes the first two; Phase 2 adds
+the third.
+
+- **DEDUP-1 — not committed.** Working tree is dirty on `local-stack`; the user
+  had gone to bed and commits were not requested. There were already 8 unpushed
+  commits on the branch before this work.
+- **DEDUP-2 — no release.** No version bump, no tag, no CHANGELOG entry.
+  Convention says every release needs a plain-language CHANGELOG entry; write it
+  when the user decides to cut one.
+- **DEDUP-3 — Bulk Duplicate Finder still in the sidebar**, deliberately, until
+  the new screen has been exercised against the real library. Remove both the
+  nav entry and `src/pages/assets/bulk-duplicate-finder.tsx` once it has.
+- **DEDUP-4 — Phase 2** (cross-library scan) and **Phase 3** (metadata salvage)
+  not started. The four app.db tables for Phase 2 already exist (migration
+  `0008_sharp_gideon.sql`) so there is no second migration to run.
+
+Implementation notes worth keeping:
+
+- **Trash, never permanent.** `deleteAssets(ids, { force: false })`. This closes
+  the "worth revisiting" note under *Cross-module review* above: the handler's
+  default is still `force: true` and the old page relied on it, which
+  contradicted GETTING_STARTED.md's trash-only promise. Measured consequence:
+  the ~15,463 assets removed via the old page on 2026-09-08 bypassed trash.
+- **Three dispositions**: trash / tag (configurable name, default `Duplicate`,
+  via Immich's `PUT /tags` upsert + `PUT /tags/assets`) / stack (`POST /stacks`,
+  first id is the primary, min 2, own assets only). `POST /tags` was NOT used —
+  it 400s on an existing name, the common case after the first run.
+- **Tag and stack both clear `duplicateId` on the whole group afterwards.**
+  Neither operation clears it on its own, so without this the group returns on
+  the next load and the list can never be worked down.
+- **Skip vs Not duplicates** are deliberately different. *Not duplicates* writes
+  `duplicateId: null` to Immich (official mechanism, permanent). *Skip* hides the
+  group in `dedupe_dismissals` only — reversible, per-account, nothing written to
+  Immich. Needed because a 12k-group backlog is worked over weeks.
+- **Ranking is user-tunable** (`src/lib/duplicates/ranking.ts`): drag-reorder,
+  per-row enable, per-row direction, stored per account in `dedupe_ranking`.
+  Criteria are tagged quality / preference / tiebreak, and a group settled only
+  by a tiebreak is flagged for review unless the files are byte-identical.
+- **Partner metadata guard** is independent of where `Owner` sits in the order:
+  a partner's copy is never auto-picked as keeper when your copy carries GPS,
+  description, tags or favourite that theirs lacks, because that metadata cannot
+  be written to an asset you do not own.
+- **Migrations auto-run at boot** via `runMigrations()` in `src/db/index.ts` —
+  the container does NOT need stopping for a schema change. (Stopping it is only
+  needed to write `app.db` externally with `sqlite3`.)
+- **Tests**: `local-testing/dedupe/ranking.test.ts` (21 assertions, no test
+  runner in the repo — the header has the compile-and-run command). A separate
+  throwaway-copy integration run confirmed the drizzle layer round-trips and
+  that SQLite's UNIQUE index does **not** collapse rows with a NULL
+  `paired_asset_id`, which is why the dismissals handler filters existing rows
+  by hand instead of relying on the constraint.
+- **Not verified**: anything visual. The stack is behind Cloudflare Access /
+  Google SSO, so the UI has never been rendered — build, typecheck, route
+  smoke-tests and logic tests only.
+
 ## Rate & Cull (photo rating/culling tool, `/assets/cull`; renamed from "Cull Photos" in v0.24.3)
 
 - **CULL-4**: Upstream PR submitted 2026-07-12 as #305 (was deferred until the

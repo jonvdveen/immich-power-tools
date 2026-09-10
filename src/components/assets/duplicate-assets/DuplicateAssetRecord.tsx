@@ -8,9 +8,10 @@ import { AlertDialog } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { humanizeBytes, humanizeNumber } from '@/helpers/string.helper'
 import { formatDate } from '@/helpers/date.helper'
-import { Camera, Calendar, FolderOpen, HardDrive, HelpCircle, Lock, MapPin, Trash2, Check, X, Shield, Users } from 'lucide-react'
+import { Camera, Calendar, EyeOff, FolderOpen, HardDrive, HelpCircle, Layers, Lock, MapPin, Trash2, Tag, Check, X, Shield, Users } from 'lucide-react'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
 import { cn } from '@/lib/utils'
+import { DISPOSITIONS, Disposition } from '@/lib/duplicates/disposition'
 
 interface DuplicateAssetRecordProps {
   record: IDuplicateAssetRecord
@@ -22,6 +23,13 @@ interface DuplicateAssetRecordProps {
   selectionMode: 'keep' | 'discard'
   assetAlbums: Record<string, IAssetAlbumInfo[]>
   partnerMatches: Record<string, IPartnerMatch[]>
+  /** Set by the De-Duplicator. When present the per-group actions describe what
+   *  will actually happen under the chosen disposition; when absent the older
+   *  Bulk Duplicate Finder's permanent-delete wording is kept unchanged. */
+  disposition?: Disposition
+  /** Hide this group from the current pass without telling Immich anything.
+   *  Distinct from "not duplicates", which is a permanent write. */
+  onSkipRecord?: (record: IDuplicateAssetRecord) => void
 }
 
 interface DuplicateAssetItemProps {
@@ -249,7 +257,9 @@ export default function DuplicateAssetRecord({
   partnerMatches,
   onKeepAllInRecord,
   selectionMode,
-  assetAlbums
+  assetAlbums,
+  disposition,
+  onSkipRecord
 }: DuplicateAssetRecordProps) {
   const recordAssetIds = record.assets.map(asset => asset.id)
   const partnerIdsInRecord = useMemo(() => Array.from(new Set(
@@ -275,6 +285,43 @@ export default function DuplicateAssetRecord({
       .filter(asset => !selectedAssets.has(asset.id))
       .reduce((sum, asset) => sum + asset.exifInfo.fileSizeInByte, 0)
   }, [record.assets, selectedAssets])
+
+  /** Wording for the apply button and its confirm dialog. Every disposition
+   *  affects a different set and carries a different promise, so this is
+   *  derived rather than templated over a single verb — "cannot be undone" is
+   *  only true of the old permanent delete, and none of these do that. */
+  const applyBlocked = disposition === 'stack' && selectedPartnerIds.length > 0
+
+  const applyCopy = useMemo(() => {
+    const keeping = selectionMode === 'keep'
+      ? selectedInRecord + selectedPartnerIds.length
+      : unselectedInRecord
+    const affected = selectionMode === 'keep' ? unselectedInRecord : selectedInRecord
+    const affectedSize = selectionMode === 'keep' ? unselectedSize : selectedSize
+
+    if (disposition === 'tag') {
+      return {
+        button: `Tag ${affected} other${affected === 1 ? '' : 's'}`,
+        title: 'Tag the copies you are not keeping',
+        description: `Keeps ${keeping} cop${keeping === 1 ? 'y' : 'ies'} and tags the other ${affected}. Nothing is moved or deleted — the tagged copies stay in your library so you can review them in Immich.`,
+      }
+    }
+    if (disposition === 'stack') {
+      const blocked = selectedPartnerIds.length > 0
+      return {
+        button: blocked ? 'Cannot stack' : `Stack ${record.assets.length} copies`,
+        title: blocked ? 'Cannot stack this group' : 'Stack this group?',
+        description: blocked
+          ? "The keeper is a partner's copy, and Immich can only stack assets you own. Pick one of your own copies as the keeper, or switch the disposition to Trash or Tag."
+          : `Collapses all ${record.assets.length} copies into one timeline entry behind the one you kept. Nothing is deleted, nothing is tagged, and you can unstack in Immich at any time.`,
+      }
+    }
+    return {
+      button: `Trash ${affected} other${affected === 1 ? '' : 's'}`,
+      title: 'Move the other copies to trash?',
+      description: `Keeps ${keeping} cop${keeping === 1 ? 'y' : 'ies'} and moves the other ${affected} to Immich's trash${affectedSize > 0 ? ` (${humanizeBytes(affectedSize)})` : ''}. They stay recoverable until you empty the trash in Immich.`,
+    }
+  }, [disposition, selectionMode, selectedInRecord, unselectedInRecord, selectedSize, unselectedSize, selectedPartnerIds.length, record.assets.length])
 
   const handleKeepAll = () => {
     onKeepAllInRecord(record)
@@ -354,68 +401,132 @@ export default function DuplicateAssetRecord({
             </div>
           )}
           </div>
-          <div className="flex items-center gap-2">
-            <AlertDialog
-              title="Keep All Assets"
-              description={`Are you sure you want to keep all ${record.assets.length} assets in this group? This will remove them from the duplicate detection and they won't appear as duplicates anymore.`}
-              onConfirm={handleKeepAll}
-              asChild
-            >
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-1"
-                title="Remove from duplicate detection"
-              >
-                <Shield size={16} />
-                Keep All
-              </Button>
-            </AlertDialog>
-            
-            {selectedInRecord > 0 && (
+          {!disposition && (
+            <div className="flex items-center gap-2">
               <AlertDialog
-                title={selectionMode === 'keep' ? "Keep Selected Assets" : "Delete Selected Assets"}
-                description={selectionMode === 'keep' 
-                  ? `Keep ${selectedInRecord} selected assets and delete ${unselectedInRecord} unselected assets? The selected assets will be removed from duplicate detection. Storage savings: ${humanizeBytes(unselectedSize)}. This action cannot be undone.`
-                  : `Delete ${selectedInRecord} selected assets and keep ${unselectedInRecord} unselected assets? The unselected assets will be removed from duplicate detection. Storage savings: ${humanizeBytes(selectedSize)}. This action cannot be undone.`
-                }
-                onConfirm={handleKeepSelected}
+                title="Keep All Assets"
+                description={`Are you sure you want to keep all ${record.assets.length} assets in this group? This will remove them from the duplicate detection and they won't appear as duplicates anymore.`}
+                onConfirm={handleKeepAll}
+                asChild
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-1"
+                  title="Remove from duplicate detection"
+                >
+                  <Shield size={16} />
+                  Keep All
+                </Button>
+              </AlertDialog>
+            
+              {selectedInRecord > 0 && (
+                <AlertDialog
+                  title={selectionMode === 'keep' ? "Keep Selected Assets" : "Delete Selected Assets"}
+                  description={selectionMode === 'keep' 
+                    ? `Keep ${selectedInRecord} selected assets and delete ${unselectedInRecord} unselected assets? The selected assets will be removed from duplicate detection. Storage savings: ${humanizeBytes(unselectedSize)}. This action cannot be undone.`
+                    : `Delete ${selectedInRecord} selected assets and keep ${unselectedInRecord} unselected assets? The unselected assets will be removed from duplicate detection. Storage savings: ${humanizeBytes(selectedSize)}. This action cannot be undone.`
+                  }
+                  onConfirm={handleKeepSelected}
+                  variant="destructive"
+                  asChild
+                >
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="flex items-center gap-1"
+                    title={selectionMode === 'keep' 
+                      ? `Keep selected, delete others (${humanizeBytes(unselectedSize)} savings)`
+                      : `Delete selected, keep others (${humanizeBytes(selectedSize)} savings)`
+                    }
+                  >
+                    {selectionMode === 'keep' ? <Shield size={16} /> : <Trash2 size={16} />}
+                    {selectionMode === 'keep' ? 'Keep' : 'Delete'} Selected ({selectedInRecord})
+                  </Button>
+                </AlertDialog>
+              )}
+            
+              <AlertDialog
+                title="Delete All Assets"
+                description={`Are you sure you want to delete all ${record.assets.length} assets in this duplicate group? Storage savings: ${humanizeBytes(totalSize)}. This action cannot be undone.`}
+                onConfirm={handleDeleteRecord}
                 variant="destructive"
                 asChild
               >
                 <Button
-                  variant="default"
+                  variant="destructive"
                   size="sm"
                   className="flex items-center gap-1"
-                  title={selectionMode === 'keep' 
-                    ? `Keep selected, delete others (${humanizeBytes(unselectedSize)} savings)`
-                    : `Delete selected, keep others (${humanizeBytes(selectedSize)} savings)`
-                  }
+                  title={`Delete group (${humanizeBytes(totalSize)} savings)`}
                 >
-                  {selectionMode === 'keep' ? <Shield size={16} /> : <Trash2 size={16} />}
-                  {selectionMode === 'keep' ? 'Keep' : 'Delete'} Selected ({selectedInRecord})
+                  <Trash2 size={16} />
+                  Delete All ({humanizeBytes(totalSize)})
                 </Button>
               </AlertDialog>
-            )}
-            
-            <AlertDialog
-              title="Delete All Assets"
-              description={`Are you sure you want to delete all ${record.assets.length} assets in this duplicate group? Storage savings: ${humanizeBytes(totalSize)}. This action cannot be undone.`}
-              onConfirm={handleDeleteRecord}
-              variant="destructive"
-              asChild
-            >
-              <Button
-                variant="destructive"
-                size="sm"
-                className="flex items-center gap-1"
-                title={`Delete group (${humanizeBytes(totalSize)} savings)`}
+            </div>
+          )}
+
+          {disposition && (
+            <div className="flex items-center gap-2">
+              {onSkipRecord && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center gap-1"
+                  title="Hide this group for now. Nothing is written to Immich, and you can restore it from Options."
+                  onClick={() => onSkipRecord(record)}
+                >
+                  <EyeOff size={16} />
+                  Skip
+                </Button>
+              )}
+
+              <AlertDialog
+                title="Mark as not duplicates?"
+                description={`All ${record.assets.length} copies stay exactly as they are, and Immich stops grouping them. This clears the group in Immich itself, so it will not come back — use Skip instead if you only want it out of the way for now.`}
+                onConfirm={handleKeepAll}
+                asChild
               >
-                <Trash2 size={16} />
-                Delete All ({humanizeBytes(totalSize)})
-              </Button>
-            </AlertDialog>
-          </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-1"
+                  title="Tell Immich these are not duplicates"
+                >
+                  <Shield size={16} />
+                  Not duplicates
+                </Button>
+              </AlertDialog>
+
+              {selectedInRecord + selectedPartnerIds.length > 0 && (applyBlocked ? (
+                <Button variant="outline" size="sm" disabled className="flex items-center gap-1" title={applyCopy.description}>
+                  <Layers size={16} />
+                  {applyCopy.button}
+                </Button>
+              ) : (
+                <AlertDialog
+                  title={applyCopy.title}
+                  description={applyCopy.description}
+                  onConfirm={handleKeepSelected}
+                  variant={DISPOSITIONS[disposition].destructive ? 'destructive' : 'default'}
+                  asChild
+                >
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="flex items-center gap-1"
+                    title={applyCopy.title}
+                  >
+                    {disposition === 'trash' && <Trash2 size={16} />}
+                    {disposition === 'tag' && <Tag size={16} />}
+                    {disposition === 'stack' && <Layers size={16} />}
+                    {applyCopy.button}
+                  </Button>
+                </AlertDialog>
+              ))}
+            </div>
+          )}
+
         </div>
       </div>
       

@@ -1,18 +1,22 @@
 /**
- * Auto-pick a keeper for each duplicate group.
+ * Auto-pick a keeper for each duplicate group, using the user's ranking.
  *
- * Ranking was chosen against this library's actual duplicates (12k groups),
- * not from first principles — the comment on each key records how often it
- * actually separates two copies, because a signal that never varies is just
- * a way to look decisive while deciding nothing.
+ * The order, which criteria count, and which way each one leans all come from
+ * the caller now (see lib/duplicates/ranking.ts). What stays fixed here is the
+ * part that isn't a preference: the chain always terminates on exactly one
+ * copy, and it never proposes a partner's copy when doing so would destroy
+ * metadata that can't be moved.
  *
- * Deliberately unused: album membership (varied in 1 group out of 12,031, and
- * dedup transfers albums anyway), file type (0 groups), and the timestamped
- * filename convention (the larger file only 24% of the time, so it reflects
- * the import naming rather than quality).
+ * Deliberately still absent from the criteria list: album membership (varied
+ * in 1 group out of 12,031, and dedup transfers albums anyway) and file type
+ * (0 groups) — measured, not assumed.
  *
  * This only ever *proposes* a selection. Nothing here deletes anything.
  */
+
+import {
+  DEFAULT_RANKING, IRankingRow, RANKING_CRITERIA, RankingKey, normalizeRanking,
+} from "./ranking";
 
 export interface IDuplicateCandidate {
   id: string;
@@ -24,6 +28,9 @@ export interface IDuplicateCandidate {
   rating: number;
   tags: number;
   isFavorite: boolean;
+  hasDescription: boolean;
+  /** False for a partner's copy. Drives the "owner" criterion and the guard. */
+  isOwn: boolean;
   /** Epoch ms of when the asset entered the library (not when it was shot). */
   createdAt: number;
   /** Immich's file hash. Two copies matching on every quality signal may still
@@ -32,70 +39,112 @@ export interface IDuplicateCandidate {
   originalFileName: string;
 }
 
-/** Each key returns a number where HIGHER wins. First non-zero difference decides. */
-const RANK_KEYS: { name: string; score: (c: IDuplicateCandidate) => number }[] = [
-  // Separates 24% of groups. Ahead of bytes on purpose: the two disagree in 8%
-  // of groups, and a larger file at lower resolution is a re-encode of a
-  // downscaled image, so pixels is the one to trust.
-  { name: "pixels", score: (c) => c.pixels },
-  // Separates ~95% — the workhorse. Same pixels means less compression.
-  { name: "bytes", score: (c) => c.bytes },
-  // The rest are metadata you can't get back once the copy is gone.
-  { name: "gps", score: (c) => (c.hasGps ? 1 : 0) },       // 11%
-  { name: "faces", score: (c) => c.faces },                 // 2%
-  { name: "rating", score: (c) => c.rating },               // 3%
-  { name: "tags", score: (c) => c.tags },                   // 24%
-  { name: "favorite", score: (c) => (c.isFavorite ? 1 : 0) }, // 6%
-];
+/** Raw score per criterion. Higher always wins before direction is applied. */
+const SCORERS: Record<RankingKey, (c: IDuplicateCandidate) => number> = {
+  pixels: (c) => c.pixels,
+  bytes: (c) => c.bytes,
+  gps: (c) => (c.hasGps ? 1 : 0),
+  faces: (c) => c.faces,
+  rating: (c) => c.rating,
+  tags: (c) => c.tags,
+  favorite: (c) => (c.isFavorite ? 1 : 0),
+  owner: (c) => (c.isOwn ? 1 : 0),
+  filename: (c) => c.originalFileName.length,
+  // Negated so that "higher wins" means oldest, matching the "desc" label
+  // ("Prefer oldest") on every other criterion.
+  date: (c) => -c.createdAt,
+};
 
-/** Applied only once every quality signal above has tied. These carry no claim
- *  about which image is better — they exist so the tool always lands on exactly
- *  one copy, and lands on the same one every run. Measured over the 686 groups
- *  that reach this point on a real library: filename length settles 663 of
- *  them, library age the remaining 23, and the id has never been needed. */
-const TIEBREAK_KEYS: { name: string; score: (c: IDuplicateCandidate) => number }[] = [
-  // The longer name is the more descriptive one -- an organised
-  // "20190615_12.45.29_JJV01165.jpg" over a bare "JJV01165.JPG".
-  { name: "longer filename", score: (c) => c.originalFileName.length },
-  // Longest-standing copy, so existing references keep pointing at it.
-  { name: "oldest", score: (c) => -c.createdAt },
-];
-
-/** Which key decided between two candidates, or null if they tie on every one. */
-export function decidingKey(a: IDuplicateCandidate, b: IDuplicateCandidate): string | null {
-  for (const key of [...RANK_KEYS, ...TIEBREAK_KEYS]) {
-    if (key.score(a) !== key.score(b)) return key.name;
-  }
-  // Asset ids are unique, so this is the guaranteed terminator: the chain
-  // always resolves to exactly one copy, and to the same one on a re-run.
-  return a.id === b.id ? null : "asset id";
+/** Metadata that lives on the asset and cannot be copied onto one you don't
+ *  own. Losing any of these is what the partner guard exists to prevent. */
+function salvageableFields(c: IDuplicateCandidate): Set<string> {
+  const fields = new Set<string>();
+  if (c.hasGps) fields.add("GPS");
+  if (c.hasDescription) fields.add("description");
+  if (c.tags > 0) fields.add("tags");
+  if (c.isFavorite) fields.add("favourite");
+  return fields;
 }
 
-function compare(a: IDuplicateCandidate, b: IDuplicateCandidate): number {
-  for (const key of RANK_KEYS) {
-    const diff = key.score(b) - key.score(a);
-    if (diff !== 0) return diff;
+/** What the discards hold that this keeper doesn't. */
+function lostIfKept(keeper: IDuplicateCandidate, discards: IDuplicateCandidate[]): string[] {
+  const kept = salvageableFields(keeper);
+  const lost = new Set<string>();
+  for (const d of discards) {
+    for (const f of salvageableFields(d)) if (!kept.has(f)) lost.add(f);
   }
-  // Everything measurable ties. Oldest-first only to make the order stable —
-  // whether it is allowed to *decide* is settled in autoPickKeepers, which
-  // checks the checksum first.
-  return a.createdAt - b.createdAt;
+  return [...lost];
+}
+
+interface ActiveKey {
+  key: RankingKey;
+  score: (c: IDuplicateCandidate) => number;
+  /** +1 keeps "higher wins", -1 flips it. */
+  sign: number;
+  label: string;
+  cosmetic: boolean;
+}
+
+function activeKeys(ranking: IRankingRow[]): ActiveKey[] {
+  return ranking
+    .filter((r) => r.enabled)
+    .map((r) => ({
+      key: r.key,
+      score: SCORERS[r.key],
+      sign: r.direction === "asc" ? -1 : 1,
+      label: RANKING_CRITERIA[r.key].label.toLowerCase(),
+      cosmetic: RANKING_CRITERIA[r.key].kind === "cosmetic",
+    }));
+}
+
+/** Which key decided between two candidates, or null if they tie on every one. */
+export function decidingKey(
+  a: IDuplicateCandidate,
+  b: IDuplicateCandidate,
+  ranking: IRankingRow[] = DEFAULT_RANKING
+): string | null {
+  for (const k of activeKeys(ranking)) {
+    if (k.score(a) !== k.score(b)) return k.label;
+  }
+  // Asset ids are unique, so this is the guaranteed terminator: the chain
+  // always resolves to exactly one copy, and to the same one on a re-run —
+  // even if the user disables every criterion.
+  return a.id === b.id ? null : "asset id";
 }
 
 export interface IAutoPickResult {
   /** duplicateId -> the asset to keep. */
   keepers: Record<string, string>;
-  /** Kept for callers; now always empty, since the tiebreak chain always
-   *  resolves. */
+  /** Kept for callers; the chain always resolves, so this stays empty. */
   undecided: string[];
-  /** Groups settled only by a tiebreak (filename length or later) rather than
-   *  by an actual quality difference — the ones worth a human glance. */
+  /** Groups settled only by a cosmetic criterion (or the id terminator) rather
+   *  than by a real difference — the ones worth a human glance. */
   weakTiebreak: string[];
   /** duplicateId -> which key settled it, for explaining the choice in the UI. */
   reasons: Record<string, string>;
+  /** Groups where the ranking chose a partner's copy but the guard overrode it
+   *  to protect metadata, with what would have been lost. */
+  guarded: Record<string, string[]>;
 }
 
-export function autoPickKeepers(candidates: IDuplicateCandidate[]): IAutoPickResult {
+export function autoPickKeepers(
+  candidates: IDuplicateCandidate[],
+  rankingInput: IRankingRow[] = DEFAULT_RANKING
+): IAutoPickResult {
+  const ranking = normalizeRanking(rankingInput);
+  const keys = activeKeys(ranking);
+  const cosmeticLabels = new Set(keys.filter((k) => k.cosmetic).map((k) => k.label));
+  cosmeticLabels.add("asset id");
+
+  const compare = (a: IDuplicateCandidate, b: IDuplicateCandidate): number => {
+    for (const k of keys) {
+      const diff = (k.score(b) - k.score(a)) * k.sign;
+      if (diff !== 0) return diff;
+    }
+    // Stable terminator so a re-run lands on the same copy.
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  };
+
   const groups = new Map<string, IDuplicateCandidate[]>();
   for (const c of candidates) {
     const list = groups.get(c.duplicateId) ?? [];
@@ -105,9 +154,9 @@ export function autoPickKeepers(candidates: IDuplicateCandidate[]): IAutoPickRes
 
   const keepers: Record<string, string> = {};
   const reasons: Record<string, string> = {};
+  const guarded: Record<string, string[]> = {};
   const undecided: string[] = [];
   const weakTiebreak: string[] = [];
-  const tiebreakNames = new Set([...TIEBREAK_KEYS.map((k) => k.name), "asset id"]);
 
   for (const [duplicateId, list] of groups) {
     if (list.length === 0) continue;
@@ -119,19 +168,42 @@ export function autoPickKeepers(candidates: IDuplicateCandidate[]): IAutoPickRes
     }
 
     const sorted = [...list].sort(compare);
-    const key = decidingKey(sorted[0], sorted[1]) ?? "asset id";
+    let winner = sorted[0];
+    let runnerUp = sorted[1];
 
-    keepers[duplicateId] = sorted[0].id;
+    // The guard. A partner's copy winning means every copy the user owns in
+    // this group is discarded — and metadata can't be written onto an asset
+    // they don't own, so anything only their copies carry is gone for good.
+    // Fall back to the best copy they do own rather than silently losing it.
+    if (!winner.isOwn) {
+      const discards = sorted.filter((c) => c.id !== winner.id);
+      const lost = lostIfKept(winner, discards);
+      if (lost.length > 0) {
+        const bestOwn = sorted.find((c) => c.isOwn);
+        if (bestOwn) {
+          guarded[duplicateId] = lost;
+          winner = bestOwn;
+          runnerUp = sorted.find((c) => c.id !== bestOwn.id) ?? runnerUp;
+        }
+      }
+    }
+
+    const key = decidingKey(winner, runnerUp, ranking) ?? "asset id";
+    keepers[duplicateId] = winner.id;
 
     // Byte-identical copies are worth naming as such: whichever is kept, the
     // file that survives is the same one, so the tiebreak carries no risk.
-    const identical = !!sorted[0].checksum && sorted[0].checksum === sorted[1].checksum;
-    reasons[duplicateId] = identical && tiebreakNames.has(key) ? "identical file" : key;
+    const identical = !!winner.checksum && winner.checksum === runnerUp.checksum;
+    reasons[duplicateId] = guarded[duplicateId]
+      ? `kept your copy — ${guarded[duplicateId].join(", ")} would be lost`
+      : identical && cosmeticLabels.has(key)
+        ? "identical file"
+        : key;
 
-    // Flag the ones settled by a tiebreak rather than a real difference --
-    // unless the files are byte-identical, where there is nothing to review.
-    if (tiebreakNames.has(key) && !identical) weakTiebreak.push(duplicateId);
+    if (cosmeticLabels.has(key) && !identical && !guarded[duplicateId]) {
+      weakTiebreak.push(duplicateId);
+    }
   }
 
-  return { keepers, undecided, reasons, weakTiebreak };
+  return { keepers, undecided, reasons, weakTiebreak, guarded };
 }

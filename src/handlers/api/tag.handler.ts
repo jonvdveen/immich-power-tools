@@ -1,4 +1,4 @@
-import { CREATE_OR_GET_TAG_PATH, DELETE_TAG_PATH, LIST_TAGS_PATH, MOVE_TAG_PATH, TAG_PATH } from "@/config/routes";
+import { BULK_TAG_ASSETS_PATH, CREATE_OR_GET_TAG_PATH, DELETE_TAG_PATH, LIST_TAGS_PATH, MOVE_TAG_PATH, TAG_PATH, UPSERT_TAGS_PATH } from "@/config/routes";
 import API from "@/lib/api";
 
 export interface ITag {
@@ -30,3 +30,12 @@ export const moveTag = (
   params: { newParentId?: string | null; newName?: string }
 ): Promise<{ newId: string; tagsMoved: number; assetsCopied: number }> =>
   API.post(MOVE_TAG_PATH(id), params);
+
+/** Create-or-get tags by name. Immich's PUT /tags is an upsert — POST /tags
+ *  returns 400 when the name already exists, which is the common case here. */
+export const upsertTags = (names: string[]): Promise<ITag[]> =>
+  API.put(UPSERT_TAGS_PATH, { tags: names });
+
+/** Apply tags to assets in one call. Returns how many assets were tagged. */
+export const bulkTagAssets = (tagIds: string[], assetIds: string[]): Promise<{ count: number }> =>
+  API.put(BULK_TAG_ASSETS_PATH, { tagIds, assetIds });

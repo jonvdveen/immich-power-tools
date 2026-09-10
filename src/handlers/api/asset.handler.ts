@@ -1,15 +1,16 @@
 import {
   ASSET_ALBUMS_BY_ASSETS_PATH,
   ASSET_GEO_HEATMAP_PATH,
-  LIST_EMPTY_VIDEOS_PATH,
+  CREATE_STACK_PATH,
   FIND_ASSETS,
+  LIST_DUPLICATES_PATH,
+  LIST_EMPTY_VIDEOS_PATH,
+  LIST_LOCATION_MANAGER_ASSETS_PATH,
   LIST_MISSING_LOCATION_ALBUMS_PATH,
   LIST_MISSING_LOCATION_ASSETS_PATH,
   LIST_MISSING_LOCATION_DATES_PATH,
-  LIST_LOCATION_MANAGER_ASSETS_PATH,
-  UPDATE_ASSETS_PATH,
-  LIST_DUPLICATES_PATH,
   LIST_ORPHAN_ASSETS_PATH,
+  UPDATE_ASSETS_PATH,
 } from "@/config/routes";
 import { cleanUpAsset } from "@/helpers/asset.helper";
 import API from "@/lib/api";
@@ -155,3 +156,10 @@ export const listOrphanAssets = async (filters: IOrphanFilters): Promise<IAsset[
   if (filters.page) params.page = String(filters.page);
   return API.get(LIST_ORPHAN_ASSETS_PATH, params).then((assets) => assets.map(cleanUpAsset));
 }
+
+/** Stack a set of assets under one primary — Immich collapses them into a
+ *  single timeline entry and nothing is deleted. The first id becomes the
+ *  primary; Immich requires at least two, and all must be yours. */
+export const createStack = async (assetIds: string[]): Promise<{ id: string }> => {
+  return API.post(CREATE_STACK_PATH, { assetIds });
+};

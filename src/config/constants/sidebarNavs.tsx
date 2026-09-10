@@ -1,4 +1,4 @@
-import { Copy, GalleryHorizontal, GalleryVerticalEnd, Image as ImageIcon, MapPin, MapPinX, PackageSearch, Rewind, ScanFace, Search, Settings, Share2, Star, Tags, User, Video, Workflow } from "lucide-react";
+import { CopyCheck, Copy, GalleryHorizontal, GalleryVerticalEnd, Image as ImageIcon, MapPin, MapPinX, PackageSearch, Rewind, ScanFace, Search, Settings, Share2, Star, Tags, User, Video, Workflow } from "lucide-react";
 
 interface SidebarNav {
   title: string;
@@ -34,6 +34,10 @@ export const sidebarGroups: SidebarGroup[] = [
       // and keeping the code avoids upstream-merge conflicts.
       // { title: "Missing Locations", link: "/assets/missing-locations", icon: <MapPinX className="h-4 w-4" /> },
       { title: "Empty Videos", link: "/assets/empty-videos", icon: <Video className="h-4 w-4" /> },
+      { title: "De-Duplicator", link: "/assets/de-duplicator", icon: <CopyCheck className="h-4 w-4" />, badge: "New" },
+      // Superseded by De-Duplicator, which is a strict superset. Kept in the
+      // nav until the new screen has been used against the real library;
+      // note this one deletes PERMANENTLY (deleteAssets defaults to force:true).
       { title: "Bulk Duplicate Finder", link: "/assets/bulk-duplicate-finder", icon: <Copy className="h-4 w-4" /> },
       { title: "Orphan Finder", link: "/assets/orphan-finder", icon: <PackageSearch className="h-4 w-4" /> },
       { title: "Potential Albums", link: "/albums/potential-albums", icon: <GalleryVerticalEnd className="h-4 w-4" /> },
