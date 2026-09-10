@@ -10,6 +10,10 @@ import Link from "next/link";
 import { LoginForm } from "../auth/LoginForm";
 import { useConfig } from "@/contexts/ConfigContext";
 import { Toaster } from "react-hot-toast";
+// The shadcn toast store had no renderer mounted, so every toast() call from
+// components/ui/use-toast displayed nothing. Aliased because react-hot-toast
+// exports the same name and both systems are in use (see BACKLOG.md).
+import { Toaster as ShadcnToaster } from "@/components/ui/toaster";
 import { useRouter } from "next/router";
 
 type RootLayoutProps = {
@@ -91,6 +95,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <div className="grid max-h-screen min-h-screen w-full">
           <div className="flex flex-col">{children}</div>
           <Toaster />
+          <ShadcnToaster />
         </div>
     )
   }
@@ -105,6 +110,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
           <Sidebar />
           <div className="flex flex-col">{children}</div>
           <Toaster />
+          <ShadcnToaster />
         </div>
       </UserContext.Provider>
   );
