@@ -116,9 +116,17 @@ Implementation notes worth keeping:
   that SQLite's UNIQUE index does **not** collapse rows with a NULL
   `paired_asset_id`, which is why the dismissals handler filters existing rows
   by hand instead of relying on the constraint.
-- **Not verified**: anything visual. The stack is behind Cloudflare Access /
-  Google SSO, so the UI has never been rendered — build, typecheck, route
-  smoke-tests and logic tests only.
+- **First visual pass done 2026-09-09** against the real library (270 groups,
+  Stephanie's account, via `https://powertools.jvsd4ever.win`). Four defects
+  found and fixed, all verified live; see the follow-up commit. Still NOT
+  exercised for real: tag and stack have never been applied to actual assets,
+  and auto-pick has not been run at scale on this screen.
+- **DEDUP-5 — the ranking is a loaded gun.** Stephanie's saved config has Owner
+  at position 1 set to "Prefer partner's copy". Inert today (both partner
+  toggles off), but flipping them makes auto-pick keep the partner's copy in
+  every cross-library group and discard hers, across ~24% of her library. The
+  metadata guard is the only brake and the UI gives no hint the combination is
+  special. Decide between a warning and a hard refusal before Phase 2 ships.
 
 ## Rate & Cull (photo rating/culling tool, `/assets/cull`; renamed from "Cull Photos" in v0.24.3)
 

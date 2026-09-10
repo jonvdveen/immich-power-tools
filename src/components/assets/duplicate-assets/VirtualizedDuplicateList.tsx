@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { VariableSizeList as List } from 'react-window'
 import { IDuplicateAssetRecord, IPartnerMatch } from '@/types/asset'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
@@ -35,16 +35,38 @@ interface ListItemProps {
     partnerMatches: Record<string, IPartnerMatch[]>
     disposition?: Disposition
     onSkipRecord?: (record: IDuplicateAssetRecord) => void
+    reportHeight: (index: number, height: number) => void
   }
 }
 
 const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
-  const { duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected, onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches, disposition, onSkipRecord } = data
+  const {
+    duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected,
+    onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches, disposition,
+    onSkipRecord, reportHeight,
+  } = data
   const record = duplicates[index]
+  const innerRef = useRef<HTMLDivElement>(null)
+
+  // Measure what actually rendered rather than predicting it. The row height
+  // depends on how many grid columns the viewport gives us, whether the group
+  // header wrapped, how many partner cards were added, and whether a long
+  // filename wrapped -- every one of which the old fixed formula got wrong at
+  // some width, clipping the bottom of the cards.
+  useEffect(() => {
+    const el = innerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      reportHeight(index, el.getBoundingClientRect().height)
+    })
+    observer.observe(el)
+    reportHeight(index, el.getBoundingClientRect().height)
+    return () => observer.disconnect()
+  }, [index, reportHeight])
 
   return (
     <div style={style}>
-      <div style={{ padding: '0 24px' }}>
+      <div ref={innerRef} style={{ padding: '0 24px' }}>
         <DuplicateAssetRecord
           record={record}
           selectedAssets={selectedAssets}
@@ -63,19 +85,31 @@ const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
   )
 }
 
-// Calculate dynamic height for each duplicate record
-const getItemSize = (record: IDuplicateAssetRecord): number => {
-  // Base height for the header section
-  let height = 120 // Header + margin
-  
-  // Calculate grid rows needed
-  const assetsPerRow = 5 // xl:grid-cols-5 is the max
-  const rows = Math.ceil(record.assets.length / assetsPerRow)
-  
-  // Each asset item is approximately 320px tall (200px image + 120px details)
-  const assetRowHeight = 320
-  
-  return height + (rows * assetRowHeight) + 32 // Add some margin
+/** Tailwind's own breakpoints, because the card grid is
+ *  `grid-cols-1 sm:2 md:3 lg:4 xl:5` and those are viewport-relative. */
+function columnsForViewport(width: number): number {
+  if (width >= 1280) return 5
+  if (width >= 1024) return 4
+  if (width >= 768) return 3
+  if (width >= 640) return 2
+  return 1
+}
+
+/** First-paint guess only — replaced by the measured height as soon as the row
+ *  renders. It still counts the partner cards, which share the same grid, so
+ *  the initial scrollbar isn't wildly wrong when partner compare is on. */
+function estimateItemSize(
+  record: IDuplicateAssetRecord,
+  partnerMatches: Record<string, IPartnerMatch[]>,
+  columns: number
+): number {
+  const partnerCount = new Set(
+    record.assets.flatMap((a) => (partnerMatches[a.id] || []).map((m) => m.id))
+  ).size
+  const cards = record.assets.length + partnerCount
+  const rows = Math.max(1, Math.ceil(cards / columns))
+  const headerHeight = columns >= 5 ? 120 : 168 // the header wraps once it narrows
+  return headerHeight + rows * 320 + 32
 }
 
 export default function VirtualizedDuplicateList({
@@ -93,20 +127,38 @@ export default function VirtualizedDuplicateList({
   onSkipRecord
 }: VirtualizedDuplicateListProps) {
   const listRef = useRef<List>(null)
+  /** index -> measured height. Indices are positional, so this is cleared
+   *  whenever the list itself changes (filtering renumbers everything). */
+  const measured = useRef<Record<number, number>>({})
+  const [columns, setColumns] = React.useState(5)
 
-  // Reset cached row heights when the duplicates list changes (e.g. after filtering)
   useEffect(() => {
+    const update = () => setColumns(columnsForViewport(window.innerWidth))
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  useEffect(() => {
+    measured.current = {}
     listRef.current?.resetAfterIndex(0)
-  }, [duplicates])
+  }, [duplicates, columns])
 
-  // Custom item size getter for VariableSizeList
-  const getItemHeight = (index: number) => {
+  const reportHeight = useCallback((index: number, value: number) => {
+    // Sub-pixel churn from zoom or scrollbar changes would otherwise loop:
+    // resetAfterIndex re-renders, which re-measures, which resets again.
+    const rounded = Math.ceil(value)
+    if (!rounded || Math.abs((measured.current[index] ?? 0) - rounded) < 2) return
+    measured.current[index] = rounded
+    listRef.current?.resetAfterIndex(index)
+  }, [])
+
+  const getItemHeight = useCallback((index: number) => {
     if (index >= duplicates.length) return 0
-    return getItemSize(duplicates[index])
-  }
+    return measured.current[index] ?? estimateItemSize(duplicates[index], partnerMatches, columns)
+  }, [duplicates, partnerMatches, columns])
 
-  // Data to pass to each list item
-  const itemData = {
+  const itemData = useMemo(() => ({
     duplicates,
     selectedAssets,
     onAssetSelect,
@@ -117,11 +169,14 @@ export default function VirtualizedDuplicateList({
     assetAlbums,
     partnerMatches,
     disposition,
-    onSkipRecord
-  }
+    onSkipRecord,
+    reportHeight,
+  }), [
+    duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected,
+    onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches, disposition,
+    onSkipRecord, reportHeight,
+  ])
 
-  // For better performance with many items, we'll use a custom implementation
-  // that handles variable heights properly
   return (
     <div style={{ height }}>
       {duplicates.length === 0 ? (

@@ -290,6 +290,18 @@ export default function DuplicateAssetRecord({
    *  affects a different set and carries a different promise, so this is
    *  derived rather than templated over a single verb — "cannot be undone" is
    *  only true of the old permanent delete, and none of these do that. */
+  /** How to describe the copies that are NOT being kept. The old page could
+   *  only delete, so this line was hardcoded to "to delete" -- which read as a
+   *  deletion warning even in Tag mode, where nothing is removed at all. Only
+   *  trash frees space, so only trash claims a saving. */
+  const discardWord = useMemo(() => {
+    if (disposition === 'tag') return { verb: 'to tag', savings: false, Icon: Tag }
+    if (disposition === 'stack') return { verb: 'to stack', savings: false, Icon: Layers }
+    if (disposition === 'trash') return { verb: 'to trash', savings: true, Icon: Trash2 }
+    // No disposition: the older Bulk Duplicate Finder, which really does delete.
+    return { verb: 'to delete', savings: true, Icon: Trash2 }
+  }, [disposition])
+
   const applyBlocked = disposition === 'stack' && selectedPartnerIds.length > 0
 
   const applyCopy = useMemo(() => {
@@ -363,7 +375,7 @@ export default function DuplicateAssetRecord({
   return (
     <div className="mb-8">
       <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-center gap-1">
               <Camera size={16} />
@@ -382,15 +394,15 @@ export default function DuplicateAssetRecord({
                     {selectedInRecord} to keep ({humanizeBytes(selectedSize)})
                   </div>
                   <div className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">
-                    <Trash2 size={16} />
-                    {unselectedInRecord} to delete ({humanizeBytes(unselectedSize)} savings)
+                    <discardWord.Icon size={16} />
+                    {unselectedInRecord} {discardWord.verb} ({humanizeBytes(unselectedSize)}{discardWord.savings ? ' savings' : ''})
                   </div>
                 </>
               ) : (
                 <>
                   <div className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">
-                    <Trash2 size={16} />
-                    {selectedInRecord} to delete ({humanizeBytes(selectedSize)} savings)
+                    <discardWord.Icon size={16} />
+                    {selectedInRecord} {discardWord.verb} ({humanizeBytes(selectedSize)}{discardWord.savings ? ' savings' : ''})
                   </div>
                   <div className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
                     <Shield size={16} />
@@ -467,7 +479,7 @@ export default function DuplicateAssetRecord({
           )}
 
           {disposition && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {onSkipRecord && (
                 <Button
                   variant="ghost"

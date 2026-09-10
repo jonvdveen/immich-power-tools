@@ -12,6 +12,7 @@ import { AlertDialog } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Loader from '@/components/ui/loader'
+import { ToastAction } from '@/components/ui/toast'
 import { toast } from '@/components/ui/use-toast'
 import { addAssetToAlbum } from '@/handlers/api/album.handler'
 import {
@@ -235,16 +236,51 @@ export default function DeDuplicatorPage() {
     return () => clearTimeout(timer)
   }, [searchInputText])
 
+  /**
+   * Escape clears the selection -- but ONLY when it isn't already dismissing
+   * something else.
+   *
+   * Escape is also how Radix closes the Options sheet, the confirm dialogs and
+   * the album popover, so without this guard the natural way to dismiss Options
+   * silently threw away every keeper: auto-pick 12,000 groups, glance at the
+   * settings, press Escape, lose all of it. Radix portals every layer with a
+   * dialog role (or the popper wrapper), so their presence is the signal that
+   * this keypress belongs to them.
+   *
+   * Even when it is ours, discarding a large selection on one unconfirmed
+   * keypress is harsh, so the toast hands it back.
+   */
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && selectedAssets.size > 0) {
-        setSelectedAssets(new Set())
-        setLastSelectedIndex(-1)
-      }
+      if (event.key !== 'Escape' || selectedAssets.size === 0) return
+      const overlayOpen = document.querySelector(
+        '[role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]'
+      )
+      if (overlayOpen) return
+
+      const previous = selectedAssets
+      const previousIndex = lastSelectedIndex
+      setSelectedAssets(new Set())
+      setLastSelectedIndex(-1)
+      toast({
+        title: `Cleared ${previous.size.toLocaleString()} selected`,
+        description: 'Nothing was changed in your library.',
+        action: (
+          <ToastAction
+            altText="Undo"
+            onClick={() => {
+              setSelectedAssets(previous)
+              setLastSelectedIndex(previousIndex)
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      })
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedAssets.size])
+  }, [selectedAssets, lastSelectedIndex])
 
   // --------------------------------------------------------------- filtering
 
@@ -876,7 +912,11 @@ export default function DeDuplicatorPage() {
 
         {!loading && !error && duplicates.length > 0 && (
           <>
-            <div className="flex items-center gap-3 border-b px-6 py-2">
+            {/* Wraps: with the Move-albums control shown (trash only) this row
+                is wider than a ~1000px viewport, and without wrapping it pushed
+                the group count and Clear-filters off the right edge and gave the
+                whole page a horizontal scrollbar. */}
+            <div className="flex flex-wrap items-center gap-3 border-b px-6 py-2">
               <div className="relative">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
