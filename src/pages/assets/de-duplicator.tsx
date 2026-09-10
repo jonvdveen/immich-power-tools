@@ -893,7 +893,6 @@ export default function DeDuplicatorPage() {
                 duplicates={visibleDuplicates}
                 selectedAssets={selectedAssets}
                 onAssetSelect={handleAssetSelect}
-                onDeleteRecord={() => { /* whole-group delete is not offered here */ }}
                 onKeepSelected={handleKeepSelected}
                 onKeepAllInRecord={handleKeepAllInRecord}
                 height={containerHeight}

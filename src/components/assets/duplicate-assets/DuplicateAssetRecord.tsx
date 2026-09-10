@@ -17,16 +17,14 @@ interface DuplicateAssetRecordProps {
   record: IDuplicateAssetRecord
   selectedAssets: Set<string>
   onAssetSelect: (assetId: string, isShiftClick?: boolean) => void
-  onDeleteRecord: (record: IDuplicateAssetRecord) => void
   onKeepSelected: (record: IDuplicateAssetRecord, selectedIds: string[], unselectedIds: string[]) => void
   onKeepAllInRecord: (record: IDuplicateAssetRecord) => void
   selectionMode: 'keep' | 'discard'
   assetAlbums: Record<string, IAssetAlbumInfo[]>
   partnerMatches: Record<string, IPartnerMatch[]>
-  /** Set by the De-Duplicator. When present the per-group actions describe what
-   *  will actually happen under the chosen disposition; when absent the older
-   *  Bulk Duplicate Finder's permanent-delete wording is kept unchanged. */
-  disposition?: Disposition
+  /** What happens to the copies that aren't kept. Drives the per-group action
+   *  wording, so the buttons say trash/tag/stack rather than a generic verb. */
+  disposition: Disposition
   /** Hide this group from the current pass without telling Immich anything.
    *  Distinct from "not duplicates", which is a permanent write. */
   onSkipRecord?: (record: IDuplicateAssetRecord) => void
@@ -252,7 +250,6 @@ export default function DuplicateAssetRecord({
   record, 
   selectedAssets, 
   onAssetSelect, 
-  onDeleteRecord, 
   onKeepSelected,
   partnerMatches,
   onKeepAllInRecord,
@@ -297,9 +294,7 @@ export default function DuplicateAssetRecord({
   const discardWord = useMemo(() => {
     if (disposition === 'tag') return { verb: 'to tag', savings: false, Icon: Tag }
     if (disposition === 'stack') return { verb: 'to stack', savings: false, Icon: Layers }
-    if (disposition === 'trash') return { verb: 'to trash', savings: true, Icon: Trash2 }
-    // No disposition: the older Bulk Duplicate Finder, which really does delete.
-    return { verb: 'to delete', savings: true, Icon: Trash2 }
+    return { verb: 'to trash', savings: true, Icon: Trash2 }
   }, [disposition])
 
   const applyBlocked = disposition === 'stack' && selectedPartnerIds.length > 0
@@ -337,10 +332,6 @@ export default function DuplicateAssetRecord({
 
   const handleKeepAll = () => {
     onKeepAllInRecord(record)
-  }
-
-  const handleDeleteRecord = () => {
-    onDeleteRecord(record)
   }
 
   const handleKeepSelected = () => {
@@ -413,73 +404,8 @@ export default function DuplicateAssetRecord({
             </div>
           )}
           </div>
-          {!disposition && (
-            <div className="flex items-center gap-2">
-              <AlertDialog
-                title="Keep All Assets"
-                description={`Are you sure you want to keep all ${record.assets.length} assets in this group? This will remove them from the duplicate detection and they won't appear as duplicates anymore.`}
-                onConfirm={handleKeepAll}
-                asChild
-              >
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-1"
-                  title="Remove from duplicate detection"
-                >
-                  <Shield size={16} />
-                  Keep All
-                </Button>
-              </AlertDialog>
-            
-              {selectedInRecord > 0 && (
-                <AlertDialog
-                  title={selectionMode === 'keep' ? "Keep Selected Assets" : "Delete Selected Assets"}
-                  description={selectionMode === 'keep' 
-                    ? `Keep ${selectedInRecord} selected assets and delete ${unselectedInRecord} unselected assets? The selected assets will be removed from duplicate detection. Storage savings: ${humanizeBytes(unselectedSize)}. This action cannot be undone.`
-                    : `Delete ${selectedInRecord} selected assets and keep ${unselectedInRecord} unselected assets? The unselected assets will be removed from duplicate detection. Storage savings: ${humanizeBytes(selectedSize)}. This action cannot be undone.`
-                  }
-                  onConfirm={handleKeepSelected}
-                  variant="destructive"
-                  asChild
-                >
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="flex items-center gap-1"
-                    title={selectionMode === 'keep' 
-                      ? `Keep selected, delete others (${humanizeBytes(unselectedSize)} savings)`
-                      : `Delete selected, keep others (${humanizeBytes(selectedSize)} savings)`
-                    }
-                  >
-                    {selectionMode === 'keep' ? <Shield size={16} /> : <Trash2 size={16} />}
-                    {selectionMode === 'keep' ? 'Keep' : 'Delete'} Selected ({selectedInRecord})
-                  </Button>
-                </AlertDialog>
-              )}
-            
-              <AlertDialog
-                title="Delete All Assets"
-                description={`Are you sure you want to delete all ${record.assets.length} assets in this duplicate group? Storage savings: ${humanizeBytes(totalSize)}. This action cannot be undone.`}
-                onConfirm={handleDeleteRecord}
-                variant="destructive"
-                asChild
-              >
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="flex items-center gap-1"
-                  title={`Delete group (${humanizeBytes(totalSize)} savings)`}
-                >
-                  <Trash2 size={16} />
-                  Delete All ({humanizeBytes(totalSize)})
-                </Button>
-              </AlertDialog>
-            </div>
-          )}
 
-          {disposition && (
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
               {onSkipRecord && (
                 <Button
                   variant="ghost"
@@ -536,9 +462,7 @@ export default function DuplicateAssetRecord({
                   </Button>
                 </AlertDialog>
               ))}
-            </div>
-          )}
-
+          </div>
         </div>
       </div>
       

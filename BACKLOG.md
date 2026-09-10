@@ -57,6 +57,17 @@ follow-up when unblocked; delete this note once both are open.
 Note upstream tracks a stale `package-lock.json` (they build with bun); left
 untouched.
 
+## Fork direction (decided 2026-09-10, not yet started)
+
+Upstream's developer has gone dark, so this stops being a fork that tracks
+upstream and becomes its own project under a new name. Nothing has been done
+yet. When it happens, the things that will need touching: the repo name and
+`package.json`, the README/GETTING_STARTED banners that currently point at
+upstream, the GHCR image path in `release.yml` and the compose file, the
+`main` branch (today a clean upstream mirror kept for merges and PRs — that
+reason disappears), and the still-open upstream PRs #304–#312 etc. listed
+above, which would become moot.
+
 ## De-Duplicator (`/assets/de-duplicator`) — supersedes Bulk Duplicate Finder
 
 **Phase 1 built 2026-09-08/09, deployed to the local stack, NOT committed and
@@ -74,9 +85,14 @@ the third.
 - **DEDUP-2 — no release.** No version bump, no tag, no CHANGELOG entry.
   Convention says every release needs a plain-language CHANGELOG entry; write it
   when the user decides to cut one.
-- **DEDUP-3 — Bulk Duplicate Finder still in the sidebar**, deliberately, until
-  the new screen has been exercised against the real library. Remove both the
-  nav entry and `src/pages/assets/bulk-duplicate-finder.tsx` once it has.
+- Bulk Duplicate Finder removed entirely 2026-09-10 (was DEDUP-3). Page, nav
+  entry, and the three components only it used (`AlbumFilterDropdown`,
+  `DuplicateOptionsMenu`, `BulkActionBar` — the last already orphaned) are gone,
+  along with the legacy no-disposition branch in `DuplicateAssetRecord`.
+- **Trash disposition proven in the wild 2026-09-10 05:19 UTC**: a full run on
+  Stephanie's account cleared 152 keepers and trashed 415 discards in ~6
+  seconds, all `status = trashed` (recoverable), nothing permanently deleted.
+  270 groups → 0. Tag and stack are still unexercised against real assets.
 - **DEDUP-4 — Phase 2** (cross-library scan) and **Phase 3** (metadata salvage)
   not started. The four app.db tables for Phase 2 already exist (migration
   `0008_sharp_gideon.sql`) so there is no second migration to run.

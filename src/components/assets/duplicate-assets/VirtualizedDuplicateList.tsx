@@ -9,14 +9,13 @@ interface VirtualizedDuplicateListProps {
   duplicates: IDuplicateAssetRecord[]
   selectedAssets: Set<string>
   onAssetSelect: (assetId: string, isShiftClick?: boolean) => void
-  onDeleteRecord: (record: IDuplicateAssetRecord) => void
   onKeepSelected: (record: IDuplicateAssetRecord, selectedIds: string[], unselectedIds: string[]) => void
   onKeepAllInRecord: (record: IDuplicateAssetRecord) => void
   height: number
   selectionMode: 'keep' | 'discard'
   assetAlbums: Record<string, IAssetAlbumInfo[]>
   partnerMatches: Record<string, IPartnerMatch[]>
-  disposition?: Disposition
+  disposition: Disposition
   onSkipRecord?: (record: IDuplicateAssetRecord) => void
 }
 
@@ -27,13 +26,12 @@ interface ListItemProps {
     duplicates: IDuplicateAssetRecord[]
     selectedAssets: Set<string>
     onAssetSelect: (assetId: string, isShiftClick?: boolean) => void
-    onDeleteRecord: (record: IDuplicateAssetRecord) => void
     onKeepSelected: (record: IDuplicateAssetRecord, selectedIds: string[], unselectedIds: string[]) => void
     onKeepAllInRecord: (record: IDuplicateAssetRecord) => void
     selectionMode: 'keep' | 'discard'
     assetAlbums: Record<string, IAssetAlbumInfo[]>
     partnerMatches: Record<string, IPartnerMatch[]>
-    disposition?: Disposition
+    disposition: Disposition
     onSkipRecord?: (record: IDuplicateAssetRecord) => void
     reportHeight: (index: number, height: number) => void
   }
@@ -41,7 +39,7 @@ interface ListItemProps {
 
 const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
   const {
-    duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected,
+    duplicates, selectedAssets, onAssetSelect, onKeepSelected,
     onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches, disposition,
     onSkipRecord, reportHeight,
   } = data
@@ -71,7 +69,6 @@ const ListItem: React.FC<ListItemProps> = ({ index, style, data }) => {
           record={record}
           selectedAssets={selectedAssets}
           onAssetSelect={onAssetSelect}
-          onDeleteRecord={onDeleteRecord}
           onKeepSelected={onKeepSelected}
           onKeepAllInRecord={onKeepAllInRecord}
           selectionMode={selectionMode}
@@ -116,7 +113,6 @@ export default function VirtualizedDuplicateList({
   duplicates,
   selectedAssets,
   onAssetSelect,
-  onDeleteRecord,
   onKeepSelected,
   onKeepAllInRecord,
   height,
@@ -162,7 +158,6 @@ export default function VirtualizedDuplicateList({
     duplicates,
     selectedAssets,
     onAssetSelect,
-    onDeleteRecord,
     onKeepSelected,
     onKeepAllInRecord,
     selectionMode,
@@ -172,7 +167,7 @@ export default function VirtualizedDuplicateList({
     onSkipRecord,
     reportHeight,
   }), [
-    duplicates, selectedAssets, onAssetSelect, onDeleteRecord, onKeepSelected,
+    duplicates, selectedAssets, onAssetSelect, onKeepSelected,
     onKeepAllInRecord, selectionMode, assetAlbums, partnerMatches, disposition,
     onSkipRecord, reportHeight,
   ])
