@@ -15,6 +15,8 @@ import { DISPOSITIONS, Disposition } from '@/lib/duplicates/disposition'
 import { IRankingRow } from '@/lib/duplicates/ranking'
 import { cn } from '@/lib/utils'
 
+export type AlbumTransferMode = 'always' | 'never' | 'ask'
+
 export interface IAutoPickSummary {
   picked: number
   weakTiebreak: number
@@ -25,10 +27,15 @@ export interface IAutoPickSummary {
 }
 
 interface DeDuplicatorOptionsProps {
+  /** Controlled so the disposition button in the toolbar can open it too. */
+  open: boolean
+  onOpenChange: (open: boolean) => void
   disposition: Disposition
   onDispositionChange: (value: Disposition) => void
   tagName: string
   onTagNameChange: (value: string) => void
+  albumTransferMode: AlbumTransferMode
+  onAlbumTransferModeChange: (value: AlbumTransferMode) => void
 
   ranking: IRankingRow[]
   onRankingChange: (ranking: IRankingRow[]) => void
@@ -66,7 +73,9 @@ const DISPOSITION_ICONS: Record<Disposition, React.ReactNode> = {
  * rows and does not fit a dropdown without becoming unusable.
  */
 export default function DeDuplicatorOptions({
+  open, onOpenChange,
   disposition, onDispositionChange, tagName, onTagNameChange,
+  albumTransferMode, onAlbumTransferModeChange,
   ranking, onRankingChange, onRankingReset, rankingSaving,
   includePartners, onIncludePartnersChange,
   partnersCanWin, onPartnersCanWinChange,
@@ -76,7 +85,7 @@ export default function DeDuplicatorOptions({
   disabled,
 }: DeDuplicatorOptionsProps) {
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild>
         <Button variant="outline" size="sm" className="flex items-center gap-2">
           <Settings2 size={16} />
@@ -127,6 +136,35 @@ export default function DeDuplicatorOptions({
                 <p className="text-xs text-muted-foreground">
                   Created if it doesn&apos;t exist. Applied through Immich&apos;s tag API, so
                   the sidecar stays in step.
+                </p>
+              </div>
+            )}
+
+            {/* Only trash removes the discarded copy, so only trash can leave a
+                hole in an album. Shown here rather than in the toolbar because
+                it is a rule about what happens when you apply, not a filter. */}
+            {disposition === 'trash' && (
+              <div className="space-y-1 pt-1">
+                <Label className="text-xs">
+                  If a discarded copy is in an album the keeper isn&apos;t
+                </Label>
+                <div className="flex overflow-hidden rounded-md border">
+                  {(['always', 'ask', 'never'] as AlbumTransferMode[]).map((mode) => (
+                    <Button
+                      key={mode}
+                      variant={albumTransferMode === mode ? 'secondary' : 'ghost'}
+                      size="sm"
+                      className="h-8 flex-1 rounded-none border-0 text-xs"
+                      onClick={() => onAlbumTransferModeChange(mode)}
+                    >
+                      {mode === 'always' ? 'Add keeper' : mode === 'ask' ? 'Ask each time' : 'Leave it'}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Trashing a duplicate that was in an album removes it from that album.
+                  &ldquo;Add keeper&rdquo; puts the copy you kept in first, so the album
+                  keeps the photo.
                 </p>
               </div>
             )}

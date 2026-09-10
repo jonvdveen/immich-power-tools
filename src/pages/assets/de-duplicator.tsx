@@ -90,11 +90,13 @@ export default function DeDuplicatorPage() {
   const [partnerMatches, setPartnerMatches] = useState<Record<string, IPartnerMatch[]>>({})
   const [partnerProgress, setPartnerProgress] = useState<{ done: number; total: number } | null>(null)
   const [autoPicking, setAutoPicking] = useState(false)
+  const [optionsOpen, setOptionsOpen] = useState(false)
   const [autoPickSummary, setAutoPickSummary] = useState<IAutoPickSummary | null>(null)
 
   /** Bumped to abandon an in-flight partner scan (toggle off, or refetch). */
   const partnerScanToken = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
+  const controlBarRef = useRef<HTMLDivElement>(null)
 
   /** Ids of every partner copy on screen. They can be chosen as a keeper but
    *  belong to another user, so they must be kept out of every write. */
@@ -212,13 +214,22 @@ export default function DeDuplicatorPage() {
   useEffect(() => {
     const updateHeight = () => {
       const headerHeight = 48
-      const filterBarHeight = duplicates.length > 0 ? 48 : 0
-      setContainerHeight(window.innerHeight - headerHeight - filterBarHeight)
+      const barHeight = controlBarRef.current?.getBoundingClientRect().height ?? 0
+      setContainerHeight(window.innerHeight - headerHeight - barHeight)
     }
     updateHeight()
     window.addEventListener('resize', updateHeight)
-    return () => window.removeEventListener('resize', updateHeight)
-  }, [duplicates])
+    // The bar wraps to a second line on a narrow viewport, and the disposition
+    // button's label changes width, so measure it rather than assuming 48px --
+    // guessing here cuts the bottom off the list.
+    const bar = controlBarRef.current
+    const observer = bar ? new ResizeObserver(updateHeight) : null
+    if (bar && observer) observer.observe(bar)
+    return () => {
+      window.removeEventListener('resize', updateHeight)
+      observer?.disconnect()
+    }
+  }, [duplicates, disposition])
 
   /**
    * Escape clears the selection -- but ONLY when it isn't already dismissing
@@ -748,47 +759,51 @@ export default function DeDuplicatorPage() {
   const actionVerb = disposition === 'tag' ? 'Tag' : disposition === 'stack' ? 'Stack' : 'Trash'
   const ActionIcon = disposition === 'tag' ? Tag : disposition === 'stack' ? Layers : Trash2
 
-  return (
-    <PageLayout>
-      <Header
-        leftComponent="De-Duplicator"
-        rightComponent={
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Select to:</span>
-              <div className="flex overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600">
-                <Button
-                  variant={selectionMode === 'keep' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setSelectionMode('keep')}
-                  className={cn('rounded-none border-0', selectionMode === 'keep' && 'bg-green-600 text-white hover:bg-green-700')}
-                >
-                  <Shield size={14} className="mr-1" /> Keep
-                </Button>
-                <Button
-                  variant={selectionMode === 'discard' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setSelectionMode('discard')}
-                  className={cn('rounded-none border-0', selectionMode === 'discard' && 'bg-red-600 text-white hover:bg-red-700')}
-                >
-                  <ActionIcon size={14} className="mr-1" /> Discard
-                </Button>
-              </div>
+  const controlBar = (
+          <div ref={controlBarRef} className="flex flex-wrap items-center gap-3 border-b px-6 py-2">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Select to:</span>
+            <div className="flex overflow-hidden rounded-md border">
+              <Button
+                variant={selectionMode === 'keep' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setSelectionMode('keep')}
+                className={cn('h-8 rounded-none border-0', selectionMode === 'keep' && 'bg-green-600 text-white hover:bg-green-700')}
+              >
+                <Shield size={14} className="mr-1" /> Keep
+              </Button>
+              <Button
+                variant={selectionMode === 'discard' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setSelectionMode('discard')}
+                className={cn('h-8 rounded-none border-0', selectionMode === 'discard' && 'bg-red-600 text-white hover:bg-red-700')}
+              >
+                <ActionIcon size={14} className="mr-1" /> Discard
+              </Button>
             </div>
 
-            {/* What the discards actually get: visible in the toolbar rather
-                than only inside Options, because it changes what every button
-                on this page does. */}
-            <div className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground">
-              <ActionIcon size={12} />
+            {/* What the discards actually get. It looked like a disabled
+                button when it was inert, so it opens the panel that changes
+                it -- the same place the Options button goes. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => setOptionsOpen(true)}
+              title="Change what happens to the copies you don't keep"
+            >
+              <ActionIcon size={14} className="mr-1" />
               {info.label}
-            </div>
+            </Button>
 
             <DeDuplicatorOptions
+              open={optionsOpen}
+              onOpenChange={setOptionsOpen}
               disposition={disposition}
               onDispositionChange={setDisposition}
               tagName={tagName}
               onTagNameChange={setTagName}
+              albumTransferMode={albumTransferMode}
+              onAlbumTransferModeChange={handleAlbumTransferModeChange}
               ranking={ranking}
               onRankingChange={handleRankingChange}
               onRankingReset={handleRankingReset}
@@ -807,11 +822,25 @@ export default function DeDuplicatorPage() {
               disabled={loading || duplicates.length === 0}
             />
 
-            <Button onClick={fetchDuplicates} disabled={loading} className="flex items-center gap-2">
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-              Refresh
-            </Button>
+            <div className="flex-1" />
+
+            <span className="text-sm text-muted-foreground">
+              {skipped.size > 0
+                ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups · ${skipped.size.toLocaleString()} skipped`
+                : `${duplicates.length.toLocaleString()} groups`}
+            </span>
           </div>
+  )
+
+  return (
+    <PageLayout>
+      <Header
+        leftComponent="De-Duplicator"
+        rightComponent={
+          <Button onClick={fetchDuplicates} disabled={loading} className="flex items-center gap-2">
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </Button>
         }
       />
 
@@ -844,6 +873,8 @@ export default function DeDuplicatorPage() {
           </div>
         )}
 
+        {!loading && !error && controlBar}
+
         {!loading && !error && duplicates.length === 0 && (
           <div className="px-6 py-12 text-center">
             <Search size={48} className="mx-auto mb-4 text-gray-400" />
@@ -856,39 +887,6 @@ export default function DeDuplicatorPage() {
 
         {!loading && !error && duplicates.length > 0 && (
           <>
-            {/* Move albums is not a filter -- it decides whether the keeper is
-                added to an album only the discarded copy belonged to, so that
-                trashing a duplicate doesn't quietly leave a hole in that album.
-                It sits here until it moves in beside the other apply-time
-                settings. Wraps because it and the count overflow ~1000px. */}
-            <div className="flex flex-wrap items-center gap-3 border-b px-6 py-2">
-              {disposition === 'trash' && (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-muted-foreground">Move albums:</span>
-                  <div className="flex overflow-hidden rounded-md border">
-                    {(['always', 'ask', 'never'] as AlbumTransferMode[]).map((mode) => (
-                      <Button
-                        key={mode}
-                        variant={albumTransferMode === mode ? 'secondary' : 'ghost'}
-                        size="sm"
-                        className="h-8 rounded-none border-0 px-2 text-xs capitalize"
-                        onClick={() => handleAlbumTransferModeChange(mode)}
-                      >
-                        {mode}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex-1" />
-
-              <span className="text-sm text-muted-foreground">
-                {skipped.size > 0
-                  ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups · ${skipped.size.toLocaleString()} skipped`
-                  : `${duplicates.length.toLocaleString()} groups`}
-              </span>
-            </div>
 
             <div ref={containerRef} style={{ height: containerHeight }} className="overflow-hidden">
               <VirtualizedDuplicateList
