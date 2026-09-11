@@ -9,10 +9,9 @@ just uses the app and doesn't want to read a diff.
 
 ## v0.35.0 — 2026-09-10
 
-A new **De-Duplicator** replaces the Bulk Duplicate Finder. It can't delete
-permanently, you control how it picks which copy to keep, and deleting is only
-one of three options. Also fixed: pop-up messages never appeared anywhere in
-this app.
+A new **De-Duplicator** replaces the Bulk Duplicate Finder. It can automatically
+choose which copy to keep, based on rules you set and rank yourself. You also
+have three options for what happens to the copies you don't keep.
 
 ### De-Duplicator
 
