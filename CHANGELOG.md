@@ -15,8 +15,7 @@ have three options for what happens to the copies you don't keep.
 
 ### De-Duplicator
 
-- **Three disposition options.** What happens to the copies you don't keep is
-  now your choice.
+- **Three disposition options.**
 
   - **Move to trash.** The old Bulk Duplicate Finder deleted permanently,
     skipping Immich's trash, so anything it removed was gone for good. Discards
@@ -32,27 +31,23 @@ have three options for what happens to the copies you don't keep.
     and nothing is removed. Works only on your own photos; Immich won't stack
     someone else's.
 
-- **Added: you set the rules for picking the keeper.** Ten criteria —
-  resolution, file size, location, faces, rating, tags, favourite, whose copy it
-  is, filename length, date added. Reorder them, switch any off, or flip which
-  way each leans, so "keep the smaller file to save space" is now possible.
-  Defaults are unchanged.
+- **You set the rules for picking the keeper.** Ten criteria — resolution, file
+  size, location, faces, rating, tags, favourite, whose copy it is, filename
+  length, date added. Reorder them, switch any off, or flip which way each
+  leans, so "keep the smaller file to save space" is now possible. Defaults are
+  unchanged.
 
-- **Added: Skip.** Hides a group and does nothing else — nothing is written to
-  Immich, and Options brings them all back. Different from **Not duplicates**,
-  which tells Immich to stop grouping those photos for good. Useful when you're
+- **See a partner's copy next to your own.** When Immich finds duplicates in
+  your library, you can also show any matching photo from a partner's library
+  and choose to keep theirs instead of yours. Two limits worth knowing: this
+  tool can never remove a partner's photo, and if only your copy carries a
+  location, description, tags or a favourite marker, the automatic picker keeps
+  yours — that information can't be moved onto a photo you don't own.
+
+- **Skip.** Hides a group and does nothing else — nothing is written to Immich,
+  and Options brings them all back. Different from **Not duplicates**, which
+  tells Immich to stop grouping those photos for good. Useful when you're
   working through thousands over several sittings.
-
-- **Added: a guard on partner photos.** You can keep a partner's copy and
-  discard your own. But if only your copy has a location, description, tags or a
-  favourite marker, the automatic picker keeps yours and says why — that
-  information can't be moved onto a photo you don't own.
-
-- **Changed: a simpler screen.** The search box, album filter and
-  same/cross-library buttons are gone; they didn't help. Every control now sits
-  on one row.
-
-- **Removed:** the Bulk Duplicate Finder.
 
 Your ranking, skips and preferences save to your Immich account, so they follow
 you between devices. Nothing to set up.
