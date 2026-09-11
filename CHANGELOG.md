@@ -7,6 +7,74 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.35.0 — 2026-09-10
+
+A new **De-Duplicator** replaces the Bulk Duplicate Finder. The short version:
+it can no longer delete anything permanently, you decide how it picks which
+copy to keep, and throwing a copy away is only one of three things you can do
+with it. Separately, a bug that stopped this app showing pop-up messages
+*anywhere* is fixed.
+
+### De-Duplicator (replaces Bulk Duplicate Finder)
+
+- **Fixed — please read this one.** The old screen deleted permanently. It
+  skipped Immich's trash entirely, so anything it removed was gone immediately
+  with no way to get it back. That was never intended and it contradicted what
+  this app promises everywhere else. The new screen always uses the trash, and
+  there is no "delete permanently" option in it at all — you empty the trash in
+  Immich yourself, when you're ready. If you used the old screen to clear
+  duplicates, those photos were not recoverable; the ones you clear from now on
+  are.
+
+- **Added: three things you can do with the copies you don't keep**, not just
+  one. **Move to trash** as above. **Tag only** leaves every photo exactly where
+  it is and just labels the extras (with a tag name of your choosing, "Duplicate"
+  by default) so you can look through them in Immich and decide later. **Stack**
+  keeps both copies but folds them into a single entry in your timeline, so the
+  clutter goes without anything being removed. Stacking only works on your own
+  photos — Immich won't let anyone stack a photo from someone else's library.
+
+- **Added: you decide how it picks the keeper.** Ten things it can look at —
+  resolution, file size, location, faces, rating, tags, favourite, whose copy it
+  is, filename length, and date added. Drag them into the order you want, switch
+  any of them off, and flip which way each one leans. So if you'd rather keep the
+  *smaller* file to save space, you can now say so. The defaults are unchanged,
+  so if you never open the panel it behaves as before.
+
+- **Added: "Skip" for the ones you're not ready to judge.** It hides that group
+  from the list and does nothing else — nothing is written to Immich and you can
+  bring them all back from Options. That's different from **Not duplicates**,
+  which tells Immich to stop grouping those photos for good. Useful when you're
+  working through thousands over several sittings.
+
+- **Added: a safety net around partner photos.** You can choose to keep a
+  partner's copy and throw away your own, but if your copy is the only one with
+  a location, description, tags or a favourite marker, the automatic picker will
+  keep yours instead and tell you why. That information can't be copied onto a
+  photo you don't own, so it would be lost for good.
+
+- **Changed:** the whole screen is simpler. The search box, album filter and
+  same/cross-library buttons are gone — they either didn't help or didn't do
+  anything yet. Every control now sits on one row, and the button showing what
+  happens to discards opens the settings panel instead of just sitting there.
+
+- **Removed:** the Bulk Duplicate Finder. The De-Duplicator does everything it
+  did.
+
+Your ranking, skipped groups and preferences are saved to your Immich account
+rather than your browser, so they follow you between devices. The app updates
+its own settings database on first start — there's nothing for you to do.
+
+### Everywhere else
+
+- **Fixed:** pop-up messages have never actually appeared in this app. The half
+  of the app that uses them — Rate & Cull, GPS Manager, and the duplicate
+  screens — was posting them into a void: successes, warnings and **error
+  messages alike**. So a failed action could look like nothing happening at all,
+  and GPS Manager's "Undo" button after a bulk location change was never
+  clickable. They show up now. Expect to see feedback in those screens that you
+  simply weren't getting before.
+
 ## v0.34.0 — 2026-08-01
 
 Workflows can now keep an album or tag in step with their own rules, the tag
