@@ -15,17 +15,22 @@ have three options for what happens to the copies you don't keep.
 
 ### De-Duplicator
 
-- **Fixed — read this one.** The old screen deleted permanently, skipping
-  Immich's trash, so anything it removed was gone for good. Discards now always
-  go to the trash, and there is no permanent-delete option at all — you empty
-  the trash in Immich when you're ready. Photos cleared with the old screen
-  can't be recovered; anything from here on can.
+- **Three disposition options.** What happens to the copies you don't keep is
+  now your choice.
 
-- **Added: three ways to handle the extra copies.** **Move to trash**, as above.
-  **Tag only** leaves every photo in place and just labels the extras (default
-  "Duplicate", rename it if you like) to review in Immich later. **Stack** folds
-  the group into one timeline entry — the clutter goes, nothing is removed.
-  Stacking works only on your own photos; Immich won't stack someone else's.
+  - **Move to trash.** The old Bulk Duplicate Finder deleted permanently,
+    skipping Immich's trash, so anything it removed was gone for good. Discards
+    now always go to the trash, and there is no permanent-delete option at all —
+    you empty the trash in Immich when you're ready. Photos cleared with the old
+    screen can't be recovered; anything from here on can.
+
+  - **Tag only.** Leaves every photo in place and just labels the extras —
+    "Duplicate" by default, rename it if you like — so you can review them in
+    Immich and decide later.
+
+  - **Stack.** Folds the group into a single timeline entry. The clutter goes
+    and nothing is removed. Works only on your own photos; Immich won't stack
+    someone else's.
 
 - **Added: you set the rules for picking the keeper.** Ten criteria —
   resolution, file size, location, faces, rating, tags, favourite, whose copy it
