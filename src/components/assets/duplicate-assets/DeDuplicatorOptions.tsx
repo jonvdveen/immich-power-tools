@@ -1,8 +1,9 @@
 import {
-  Archive, Info, Layers, Loader2, Settings2, Sparkles, Tag, Trash2, Users,
+  Archive, Info, Layers, Loader2, Settings2, Sparkles, Tag, Trash2, TriangleAlert, Users,
 } from 'lucide-react'
 import React from 'react'
 
+import CrossLibraryScanPanel, { IScanProgress } from '@/components/assets/duplicate-assets/CrossLibraryScanPanel'
 import RankingEditor from '@/components/assets/duplicate-assets/RankingEditor'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,8 +12,9 @@ import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
+import { IScanStatus } from '@/handlers/api/dedupe.handler'
 import { DISPOSITIONS, Disposition } from '@/lib/duplicates/disposition'
-import { IRankingRow } from '@/lib/duplicates/ranking'
+import { IRankingRow, ownerOutranksQuality } from '@/lib/duplicates/ranking'
 import { cn } from '@/lib/utils'
 
 export type AlbumTransferMode = 'always' | 'never' | 'ask'
@@ -49,12 +51,25 @@ interface DeDuplicatorOptionsProps {
   partnerScanning: boolean
   partnerProgress: { done: number; total: number } | null
 
+  scanStatus: IScanStatus | null
+  scanStatusLoading: boolean
+  scanning: boolean
+  scanProgress: IScanProgress | null
+  onScan: () => void
+  onStopScan: () => void
+  onClearIndex: () => void
+  clearingIndex: boolean
+
   onAutoPick: () => void
   autoPicking: boolean
   autoPickSummary: IAutoPickSummary | null
 
   dismissedCount: number
   onClearDismissals: () => void
+  /** Cross-library pairs marked "not the same photo". A different kind of
+   *  decision from a skip, so it gets its own count and its own reset. */
+  pairVerdictCount: number
+  onClearPairVerdicts: () => void
 
   disabled?: boolean
 }
@@ -80,8 +95,11 @@ export default function DeDuplicatorOptions({
   includePartners, onIncludePartnersChange,
   partnersCanWin, onPartnersCanWinChange,
   partnerScanning, partnerProgress,
+  scanStatus, scanStatusLoading, scanning, scanProgress,
+  onScan, onStopScan, onClearIndex, clearingIndex,
   onAutoPick, autoPicking, autoPickSummary,
   dismissedCount, onClearDismissals,
+  pairVerdictCount, onClearPairVerdicts,
   disabled,
 }: DeDuplicatorOptionsProps) {
   return (
@@ -164,7 +182,9 @@ export default function DeDuplicatorOptions({
                 <p className="text-xs text-muted-foreground">
                   Trashing a duplicate that was in an album removes it from that album.
                   &ldquo;Add keeper&rdquo; puts the copy you kept in first, so the album
-                  keeps the photo.
+                  keeps the photo. On a cross-library match that means adding your
+                  partner&apos;s copy to your album — the photo stays, but you no longer own
+                  the file behind it.
                 </p>
               </div>
             )}
@@ -203,6 +223,22 @@ export default function DeDuplicatorOptions({
                 asset you don&apos;t own, so it would be lost for good.
               </p>
             </div>
+            {ownerOutranksQuality(ranking) && (
+              <div className="flex gap-2 rounded-md border border-red-500/50 bg-red-500/10 p-2">
+                <TriangleAlert size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-500" />
+                <p className="text-xs text-muted-foreground">
+                  <strong className="text-red-700 dark:text-red-400">
+                    Owner is set to &ldquo;prefer partner&apos;s copy&rdquo; above your quality
+                    criteria.
+                  </strong>{' '}
+                  In a cross-library match your copy is the only one you own, so auto-pick will
+                  mark <em>every</em> one of them for {DISPOSITIONS[disposition].label.toLowerCase()}
+                  {' '}— even where yours is the sharper or larger file. That is a reasonable
+                  choice if you want one library to hold everything; move Owner below Resolution
+                  and File size if it isn&apos;t what you meant. Nothing happens until you apply.
+                </p>
+              </div>
+            )}
             <Button
               size="sm"
               variant="secondary"
@@ -299,7 +335,7 @@ export default function DeDuplicatorOptions({
             {partnerScanning && (
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 size={12} className="animate-spin" />
-                Scanning partner libraries
+                Looking for partner copies of the groups on screen
                 {partnerProgress
                   ? ` — ${partnerProgress.done.toLocaleString()} of ${partnerProgress.total.toLocaleString()} groups`
                   : ''}…
@@ -309,7 +345,29 @@ export default function DeDuplicatorOptions({
 
           <div className="border-t" />
 
-          {/* --- Skipped groups --- */}
+          {/* --- Cross-library index --- */}
+          <section className={cn('space-y-2', !includePartners && 'pointer-events-none opacity-50')}>
+            <CrossLibraryScanPanel
+              status={scanStatus}
+              loadingStatus={scanStatusLoading}
+              scanning={scanning}
+              progress={scanProgress}
+              onScan={onScan}
+              onStop={onStopScan}
+              onClear={onClearIndex}
+              clearing={clearingIndex}
+              enabled={includePartners}
+            />
+            {!includePartners && (
+              <p className="text-xs text-muted-foreground">
+                Turn on <strong>Compare against partner photos</strong> above to use this.
+              </p>
+            )}
+          </section>
+
+          <div className="border-t" />
+
+          {/* --- Things you have set aside --- */}
           <section className="space-y-2">
             <Label className="text-sm font-medium">Skipped groups</Label>
             <p className="text-xs text-muted-foreground">
@@ -328,6 +386,24 @@ export default function DeDuplicatorOptions({
               disabled={dismissedCount === 0}
             >
               Restore all skipped groups
+            </Button>
+
+            <Label className="block pt-2 text-sm font-medium">Cross-library verdicts</Label>
+            <p className="text-xs text-muted-foreground">
+              Marking a cross-library match <strong>Not the same photo</strong> is remembered
+              here rather than in Immich, which never made the match in the first place. It
+              survives a rescan. {pairVerdictCount > 0
+                ? `${pairVerdictCount.toLocaleString()} recorded.`
+                : 'None recorded yet.'}
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={onClearPairVerdicts}
+              disabled={pairVerdictCount === 0}
+            >
+              Forget those verdicts
             </Button>
           </section>
         </div>

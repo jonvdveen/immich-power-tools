@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { NextApiRequest, NextApiResponse } from "next";
 
 import { appDb } from "@/db";
@@ -10,7 +10,8 @@ import { getCurrentUser } from "@/handlers/serverUtils/user.utils";
  *
  * GET    - every dismissal for this account
  * POST   - { groupKeys: string[] } and/or { pairs: [{ groupKey, pairedAssetId }] }
- * DELETE - { groupKeys: string[] } to un-dismiss, or { all: true } to reset
+ * DELETE - { groupKeys: string[] } to un-dismiss specific ones, or
+ *          { scope: "all" | "groups" | "pairs" } to reset a whole kind
  *
  * Server-side rather than per-device: the review band is worked through over
  * weeks, and a dismissal that doesn't survive a browser change makes the
@@ -90,9 +91,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === "DELETE") {
-      if (req.body?.all === true) {
-        await appDb.delete(dedupeDismissals).where(eq(dedupeDismissals.ownerId, ownerId));
-        return res.status(200).json({ cleared: true });
+      // The two kinds are cleared separately on purpose. "Restore all skipped
+      // groups" must not also throw away every "these are not the same photo"
+      // verdict -- one is a shelf, the other is a judgement, and a user
+      // tidying the first would not expect to lose the second.
+      const scope = req.body?.all === true ? "all" : req.body?.scope;
+      if (scope === "all" || scope === "groups" || scope === "pairs") {
+        const kind =
+          scope === "groups" ? isNull(dedupeDismissals.pairedAssetId)
+            : scope === "pairs" ? isNotNull(dedupeDismissals.pairedAssetId)
+              : undefined;
+        await appDb
+          .delete(dedupeDismissals)
+          .where(kind ? and(eq(dedupeDismissals.ownerId, ownerId), kind) : eq(dedupeDismissals.ownerId, ownerId));
+        return res.status(200).json({ cleared: true, scope });
       }
       const groupKeys: string[] = Array.isArray(req.body?.groupKeys) ? req.body.groupKeys : [];
       if (groupKeys.length === 0) return res.status(400).json({ error: "nothing to restore" });

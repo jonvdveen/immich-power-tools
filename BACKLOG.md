@@ -70,21 +70,16 @@ above, which would become moot.
 
 ## De-Duplicator (`/assets/de-duplicator`) — supersedes Bulk Duplicate Finder
 
-**Phase 1 built 2026-09-08/09, deployed to the local stack, NOT committed and
-NOT released.** Spec (including the measured calibration data behind Phase 2's
-confidence bands) lives in `docs/DEDUPLICATOR_SPEC.md`.
+**Phase 1 released in v0.35.0 (2026-09-10). Phase 2 built the same day,
+deployed to the local stack, not yet released.** Spec — including the measured
+calibration behind the confidence bands and the cost figures behind the scan
+design — lives in `docs/DEDUPLICATOR_SPEC.md`.
 
 Why the new screen exists: the old page could only permanently delete, ranked
 keepers on a chain hardcoded in the source, and had no way to act on a photo
-already held in a partner's library. Phase 1 fixes the first two; Phase 2 adds
+already held in a partner's library. Phase 1 fixed the first two; Phase 2 adds
 the third.
 
-- **DEDUP-1 — not committed.** Working tree is dirty on `local-stack`; the user
-  had gone to bed and commits were not requested. There were already 8 unpushed
-  commits on the branch before this work.
-- **DEDUP-2 — no release.** No version bump, no tag, no CHANGELOG entry.
-  Convention says every release needs a plain-language CHANGELOG entry; write it
-  when the user decides to cut one.
 - Bulk Duplicate Finder removed entirely 2026-09-10 (was DEDUP-3). Page, nav
   entry, and the three components only it used (`AlbumFilterDropdown`,
   `DuplicateOptionsMenu`, `BulkActionBar` — the last already orphaned) are gone,
@@ -93,9 +88,9 @@ the third.
   Stephanie's account cleared 152 keepers and trashed 415 discards in ~6
   seconds, all `status = trashed` (recoverable), nothing permanently deleted.
   270 groups → 0. Tag and stack are still unexercised against real assets.
-- **DEDUP-4 — Phase 2** (cross-library scan) and **Phase 3** (metadata salvage)
-  not started. The four app.db tables for Phase 2 already exist (migration
-  `0008_sharp_gideon.sql`) so there is no second migration to run.
+- **DEDUP-4 — Phase 2 done** (see below); **Phase 3** (metadata salvage) not
+  started. Phase 2 needed one extra column beyond the four tables in
+  `0008_sharp_gideon.sql` — see `0009_old_stardust.sql`.
 
 Implementation notes worth keeping:
 
@@ -126,8 +121,22 @@ Implementation notes worth keeping:
 - **Migrations auto-run at boot** via `runMigrations()` in `src/db/index.ts` —
   the container does NOT need stopping for a schema change. (Stopping it is only
   needed to write `app.db` externally with `sqlite3`.)
-- **Tests**: `local-testing/dedupe/ranking.test.ts` (21 assertions, no test
-  runner in the repo — the header has the compile-and-run command). A separate
+- **Phase 2 notes.** The scan probes *your* library against *theirs*, 200 assets
+  per HTTP call, ~13 ms per asset measured cold (not the 31 ms first recorded —
+  and beware measuring warm, which reports ~2 ms and is a cache artefact). Resume
+  cursor is `(createdAt, id)`, because `createdAt` alone is not unique: Immich
+  stamps it from the transaction clock. A redundant sargable `createdAt >=`
+  alongside the row comparison cut the per-chunk index walk by 6x. A
+  cross-library cluster reuses the same record component under a synthetic
+  `xlib:<asset id>` key, so there is no second rendering path. Two drizzle
+  gotchas cost real time and are worth remembering: a bare JS array in a `sql`
+  template expands to a **row constructor** `($1,$2)`, not an array — use
+  `sql.param(ids)` for `= ANY(...)`; and the shipped `dedupe_pairs` upsert was
+  proven idempotent by re-running an identical chunk, not assumed.
+- **Tests**: `local-testing/dedupe/ranking.test.ts` (21 assertions) and
+  `local-testing/dedupe/bands.test.ts` (30 assertions, Phase 2 — band
+  boundaries, stem normalisation, and the Owner warning). No test runner in the
+  repo — each header has the compile-and-run command. A separate
   throwaway-copy integration run confirmed the drizzle layer round-trips and
   that SQLite's UNIQUE index does **not** collapse rows with a NULL
   `paired_asset_id`, which is why the dismissals handler filters existing rows
@@ -147,12 +156,52 @@ Implementation notes worth keeping:
   the group-count bar, leaving only Refresh in the header. The disposition
   indicator is now a real button that opens Options — it read as a disabled
   button when it was inert.
-- **DEDUP-5 — the ranking is a loaded gun.** Stephanie's saved config has Owner
-  at position 1 set to "Prefer partner's copy". Inert today (both partner
-  toggles off), but flipping them makes auto-pick keep the partner's copy in
-  every cross-library group and discard hers, across ~24% of her library. The
-  metadata guard is the only brake and the UI gives no hint the combination is
-  special. Decide between a warning and a hard refusal before Phase 2 ships.
+- **DEDUP-5 — RESOLVED in Phase 2 (2026-09-10), by warning rather than refusal.**
+  `ownerOutranksQuality()` in `src/lib/duplicates/ranking.ts` detects the
+  combination (Owner enabled, preferring the partner, ranked above an enabled
+  substantive criterion) and Options shows a red callout directly above the
+  auto-pick button saying it will mark every cross-library copy of yours for
+  the trash. Not refused: the setting is deliberate, trash is recoverable, and
+  the confirm dialog states the partner-keeper count. Stephanie's saved config
+  still has Owner at position 1 — she will now see the warning the first time
+  she opens Options with partner comparison on.
+
+- **DEDUP-6 — the same-library overlay still probes live.** Now that the
+  cross-library index covers those assets too, the ~30 ms-per-group probe on
+  every page load could be served from `dedupe_pairs` instead. Left alone in
+  Phase 2 on purpose (one change at a time). Worth doing before the index is
+  taken for granted anywhere else.
+
+- **DEDUP-7 — the multi-partner scan path is built but unexercised.** Only
+  `Jonathan → Stephanie` exists on this stack, so the per-partner cursor logic
+  in `src/pages/api/dedupe/scan.ts` has only ever run with one partner. Check it
+  before relying on it if another share is added.
+
+- **DEDUP-9 — discard mode marks untouched same-library groups as resolved.**
+  `handleApplyDiscards` treats every unticked asset in every *visible* group as
+  "reviewed and kept" and clears its `duplicateId` — so trashing five photos also
+  resolves the other 265 groups on screen. That may be the intent (discard mode
+  as "I have been through the whole list"), or it may be a Phase 1 slip; it
+  predates Phase 2 and shipped in v0.35.0, so it was left alone. Phase 2 scoped
+  it out of the cross-library view only, where the write provably does nothing.
+  Decide which reading is right and make the button say so.
+
+- **DEDUP-8 — both partners running cross-library dedup at once.** The quality
+  criteria are symmetric so both accounts pick the same keeper and agree. The
+  Owner criterion is not: if both sides set "prefer partner's copy", both sides
+  trash their own copy. Recoverable, and each side confirms, but there is no
+  cross-account interlock and there probably cannot be one.
+
+- **Phase 2 built 2026-09-10, deployed to the local stack, unreleased.**
+  Cross-library scan (`/api/dedupe/scan`), the cluster read-back
+  (`/api/dedupe/pairs`), confidence bands, a Same library / Cross-library
+  switch, per-pair "not the same photo" verdicts, and the DEDUP-5 warning.
+  Migration `0009_old_stardust.sql` adds `dedupe_scan_state.cursor_asset_id`.
+  Verified: SQL plans and cost measured against the live database, the
+  `dedupe_pairs` upsert proven idempotent against a copy of app.db, 30 unit
+  tests on the band and Owner-warning logic. **Not yet verified in a browser** —
+  the feature needs a session as Stephanie (Jonathan has no incoming partner
+  share, so his account cannot exercise it at all).
 
 ## Rate & Cull (photo rating/culling tool, `/assets/cull`; renamed from "Cull Photos" in v0.24.3)
 

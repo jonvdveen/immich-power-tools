@@ -1,8 +1,8 @@
 # De-Duplicator — design spec
 
-Status: **Phase 1 built and deployed to the local stack** (2026-09-09), uncommitted
-and unreleased. Phases 2 and 3 not started. Supersedes
-`src/pages/assets/bulk-duplicate-finder.tsx`.
+Status: **Phase 1 released in v0.35.0. Phase 2 built and deployed to the local
+stack (2026-09-10), uncommitted and unreleased.** Phase 3 not started.
+Superseded and removed `src/pages/assets/bulk-duplicate-finder.tsx`.
 
 ## 1. What this is
 
@@ -14,8 +14,8 @@ One screen that handles both kinds of duplicate:
   (`userIds: [asset.ownerId]`) and prunes singletons via `cleanupSingletonGroups`
   before returning.
 
-The existing Bulk Duplicate Finder stays in the nav until this is verified on real
-data, then it is removed. This screen is a strict superset.
+The Bulk Duplicate Finder was removed in v0.35.0. This screen is a strict
+superset of it.
 
 ## 2. Calibration (measured, not assumed)
 
@@ -53,19 +53,61 @@ positives in it are not worth the false ones. Revisit only if real usage shows m
 
 ### Cost
 
-Measured **~31 ms per probe** (1,500 assets in ~46 s), not the ~17 ms estimated
-earlier. A full pass over Stephanie's 103,903 assets is roughly **53 minutes**.
-Extrapolating the sample, expect on the order of **22,000 exact-band pairs**.
+Re-measured when Phase 2 was built, because the number drives the whole design.
+Three disjoint 200-asset slices, cold, one run each: 3.99 s, 1.90 s, 1.82 s —
+**~13 ms per asset** with three neighbours per probe. A full pass over
+Stephanie's **103,206 probeable assets is roughly 22 minutes**, not the 53
+recorded earlier. The 31 ms figure came from a differently-shaped sample; 13 ms
+is the one to trust.
 
-## 3. Scan lifecycle
+Beware measuring this warm: repeating the same 200-asset slice drops to ~2 ms
+per asset, which is a cache artefact and not what a full sequential pass costs.
 
-- Cross-library scanning is **off by default**. With it off, the screen reads Immich's
-  precomputed groups only and is instant.
-- Turning on partner scope reveals a **Scan now** button. Scan is resumable and
-  chunked; progress is reported.
-- Subsequent opens do an **incremental top-up** — only assets newer than the stored
-  watermark. Index age is displayed.
-- No scheduled/background job. Nothing runs unless asked.
+Asking the index for three neighbours instead of one costs ~1 ms per asset and
+occasionally finds a match the nearest neighbour alone misses, so `LIMIT 3` it is.
+
+## 3. Scan lifecycle — as built
+
+- Cross-library scanning is **off by default**, behind the same
+  "Compare against partner photos" switch as the Phase 1 overlay. With it off the
+  screen reads Immich's precomputed groups only and is instant.
+- **Chunked over HTTP.** `POST /api/dedupe/scan` probes 200 assets (2–4 s) and
+  returns; the browser loops. No request is held open for the length of a scan.
+- **Resumable.** The cursor lives in `app.db`, not the browser, so closing the tab
+  costs only the chunk in flight. The button reads *Scan now* / *Continue scan* /
+  *Check for new photos* depending on what the index already holds.
+- **Incremental top-up.** Once a pass completes the cursor sits at the newest
+  asset and later runs walk only what has been added since.
+- **One partner at a time.** Each `(you, partner)` pair has its own cursor. Adding
+  a partner therefore costs one pass for that partner rather than re-scanning
+  everyone. Only Stephanie has an incoming partner share on this stack
+  (`Jonathan → Stephanie`), so the multi-partner path is built but unexercised.
+- No scheduler. Nothing runs unless asked.
+
+### The resume cursor
+
+`(createdAt, id)`, not `createdAt` alone. Immich stamps `createdAt` from the
+transaction clock, so a bulk import can hand several assets the same value;
+resuming on `> watermark` would step over the rest of a tie. Measured worst case
+on this library: **seven** assets share a millisecond, comfortably inside a chunk.
+A stall guard reports rather than spins if that ever exceeds a chunk.
+
+The watermark column is a millisecond timestamp and Postgres keeps microseconds,
+so the comparison truncates both sides. That can only re-probe the tail of one
+millisecond, never skip past it, and re-probing is free — the write is an upsert
+(verified: re-running an identical chunk leaves the row count unchanged).
+
+The predicate carries a redundant `createdAt >= watermark` alongside the row
+comparison. `date_trunc` is not sargable, so without it the planner walks
+`asset_createdAt_idx` from the beginning of time — measured 218,000 discarded
+rows per chunk a few months in, and growing. With it, 36,000 and shrinking.
+Six times fewer buffers.
+
+### Known gap
+
+The probe runs *your* library against *theirs*. A partner adding a copy of a
+photo you have held for years is therefore found by a full re-scan, not a top-up.
+Said plainly in the UI rather than left to be discovered.
 
 ## 4. Ranking editor
 
@@ -133,12 +175,46 @@ Impossible when the keeper is a partner asset — hence the guard in section 4.
 survives rescans and browser changes. Without this the Review band is unusable after
 one pass.
 
-## 8. Layout
+## 8. Layout — as built
 
-Single list of clusters. Filter chips for source (same-library / cross-library) and
-band (exact / near / review). Auto-pick and the bulk bar operate on the current
-filter, so "cross-library + exact" is one safe sweep and the Review band can be worked
-by hand later.
+A **switch**, not a filter. Same library / Cross-library, one list at a time, with
+band chips (Exact / Near / Review) appearing only in the cross-library view.
+
+The original plan was a single merged list with source chips. Two things argued
+against it. The chips were removed in Phase 1 precisely because three labels over
+one set of groups meant nothing, and re-adding them over a genuinely mixed list
+would put two different questions in one scroll: a same-library group asks *which
+of your copies to keep*, a cross-library cluster asks *which library keeps the
+photo at all*. The controls only appear once an index exists, so nothing is shown
+that cannot yet answer for itself.
+
+A cross-library cluster is rendered by the **same** component as an Immich group —
+one asset of yours with the partner's copies attached as matches, under a
+synthetic key `xlib:<your asset id>`. That reuses the cards, the selection model,
+the metadata guard and the whole apply path without a second code path. What
+differs is only the wording, which is derived from `record.source`.
+
+### Paging
+
+`GET /api/dedupe/pairs` returns at most 2,000 clusters of one band, ordered by
+distance so the most certain come first. Twenty thousand clusters of thumbnails is
+not a screen anyone can use. The list drains on its own — resolved and dismissed
+clusters are filtered out on the next load — so "showing 2,000 of 21,843" becomes
+the next 2,000 rather than a dead end.
+
+Three things are filtered out at read time, all staleness rather than error:
+assets Immich has since grouped itself (they are in the other list already, with
+the same partner overlay), anything trashed or deleted since the scan, and
+dismissed pairs. The index rows themselves are left alone, so restoring an asset
+from Immich's trash brings its match back rather than needing a rescan.
+
+### Auto-pick in the cross-library view
+
+Excluded unless "let a partner's copy win" is on: the only copy you own in such a
+cluster is your own, so with partner copies barred from winning there is nothing
+to choose between, and ticking your own copy would mark thousands of clusters
+"decided" while deciding nothing. Review-band clusters are never auto-picked —
+that is what the band is for.
 
 ## 9. app.db schema additions
 
@@ -149,7 +225,15 @@ by hand later.
                         last_run_at)
     dedupe_ranking     (owner_id, config, updated_at)
 
-All four ship in migration `0008_sharp_gideon.sql`, already applied.
+All four shipped in migration `0008_sharp_gideon.sql`. Phase 2 added one column
+in `0009_old_stardust.sql` — `dedupe_scan_state.cursor_asset_id`, the second half
+of the resume cursor (see section 3). Applied at container boot, no stop needed;
+confirmed on the live stack.
+
+`dedupe_dismissals` now holds two kinds of row and they are cleared separately.
+"Restore all skipped groups" must not also throw away every "not the same photo"
+verdict — one is a shelf, the other is a judgement — so the DELETE endpoint takes
+`scope: "all" | "groups" | "pairs"` and the Options panel offers each on its own.
 
 Correction to the earlier draft: this needs **no container stop**. `runMigrations()`
 in `src/db/index.ts` runs pending migrations at boot and is idempotent. Stopping the
@@ -166,10 +250,31 @@ itself rather than relying on the constraint.
 
 ## 10. Build order
 
-- **Phase 1** — DONE. Screen + ranking editor + three dispositions + skip, on Immich
-  groups only. No scan infrastructure.
-- **Phase 2** — cross-library scan, bands, partner clusters, incremental top-up.
-- **Phase 3** — metadata salvage.
+- **Phase 1** — DONE, released v0.35.0. Screen + ranking editor + three
+  dispositions + skip, on Immich groups only. No scan infrastructure.
+- **Phase 2** — DONE, unreleased. Cross-library scan, bands, partner clusters,
+  incremental top-up, per-pair dismissals, and the Owner-criterion warning that
+  Phase 2 made urgent (see below).
+- **Phase 3** — metadata salvage. Not started.
+
+### The Owner criterion, and why Phase 2 needed a warning
+
+Ranking Owner as "prefer partner's copy" was close to harmless in Phase 1: it
+could only affect the handful of Immich groups that happened to have a partner
+match overlaid on them. The cross-library scan changes what it costs. It now
+applies to every photo the two libraries share, and in each of those clusters
+your copy is the only one you own — so auto-pick would mark every single one for
+the trash, limited only by the metadata guard.
+
+That is a legitimate choice for a household that wants one canonical library. It
+is not something to find out afterwards. `ownerOutranksQuality()` detects the
+configuration — Owner enabled, set to prefer the partner, ranked above at least
+one enabled substantive criterion — and the Options panel says plainly what will
+happen, immediately above the auto-pick button.
+
+Warned rather than refused. The user set it deliberately, trash is recoverable,
+and the confirm dialog states the partner-keeper count. Overriding a deliberate
+configuration would be the tool deciding it knows better.
 
 ## 11. Open
 
@@ -177,3 +282,12 @@ itself rather than relying on the constraint.
   worth re-measuring before trusting auto-pick on them.
 - Stem normalisation is tuned to this library's naming conventions. It degrades to
   "no corroboration" rather than to false positives, but is not universal.
+- **Two accounts running this against each other.** The quality criteria are
+  symmetric, so both accounts converge on the same keeper and the result is
+  consistent. The Owner criterion is the asymmetric one — if both sides set
+  "prefer partner's copy", both sides trash. Recoverable from trash, and each side
+  confirms, but worth a thought before both partners run it.
+- **The same-library overlay still probes live** (~30 ms per group on load) even
+  though the index now covers those assets too. Serving it from the index would
+  make that instant. Deliberately not done in Phase 2 — one change at a time.
+- Tag and stack have still never been applied to real assets.

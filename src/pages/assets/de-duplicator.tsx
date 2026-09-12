@@ -1,4 +1,4 @@
-import { Layers, RefreshCw, Search, Shield, Tag, Trash2 } from 'lucide-react'
+import { Layers, Loader2, RefreshCw, Search, Shield, Tag, Trash2, Users } from 'lucide-react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import AlbumTransferDialog from '@/components/assets/duplicate-assets/AlbumTransferDialog'
@@ -17,8 +17,9 @@ import {
   createStack, deleteAssets, getAlbumsByAssetIds, IAssetAlbumInfo, listDuplicates, updateAssets,
 } from '@/handlers/api/asset.handler'
 import {
-  addDismissals, clearDismissals, getRankingConfig, getSetting, listDismissals,
-  putRankingConfig, putSetting, resetRankingConfig,
+  addDismissals, clearDismissals, clearScanIndex, getCrossLibraryPairs, getRankingConfig,
+  getScanStatus, getSetting, IScanStatus, listDismissals, putRankingConfig, putSetting,
+  resetRankingConfig, runScanChunk,
 } from '@/handlers/api/dedupe.handler'
 import { bulkTagAssets, upsertTags } from '@/handlers/api/tag.handler'
 import { humanizeBytes } from '@/helpers/string.helper'
@@ -27,6 +28,8 @@ import {
   DEFAULT_TAG_NAME, DISPOSITIONS, DISPOSITION_SETTING_KEY, Disposition,
   TAG_NAME_SETTING_KEY, isDisposition,
 } from '@/lib/duplicates/disposition'
+import { IScanProgress } from '@/components/assets/duplicate-assets/CrossLibraryScanPanel'
+import { BANDS, BAND_ORDER, Band } from '@/lib/duplicates/bands'
 import { DEFAULT_RANKING, IRankingRow } from '@/lib/duplicates/ranking'
 import { cn } from '@/lib/utils'
 import { IDuplicateAssetRecord, IPartnerMatch } from '@/types/asset'
@@ -37,6 +40,8 @@ type AlbumTransferMode = 'always' | 'never' | 'ask'
 const INCLUDE_PARTNERS_KEY = 'dedupe_include_partners'
 const PARTNERS_CAN_WIN_KEY = 'dedupe_partners_can_win'
 const ALBUM_TRANSFER_KEY = 'dedupe_album_transfer'
+const VIEW_KEY = 'dedupe_view'
+const BAND_KEY = 'dedupe_band'
 
 /** Ids per write. The Immich proxy is a Next API route on the default 1MB body
  *  parser, which a bulk id list blows past at roughly 26,000 ids — measured:
@@ -84,6 +89,23 @@ export default function DeDuplicatorPage() {
   const [rankingSaving, setRankingSaving] = useState(false)
   const [skipped, setSkipped] = useState<Set<string>>(new Set())
 
+  /** Which list is on screen. The two are worked separately: a same-library
+   *  group is a decision about which of your copies to keep, a cross-library
+   *  cluster is a decision about which library keeps the photo at all. */
+  const [view, setViewState] = useState<'same' | 'cross'>('same')
+  const [crossBand, setCrossBandState] = useState<Band>('exact')
+  const [crossRecords, setCrossRecords] = useState<IDuplicateAssetRecord[]>([])
+  const [crossMatches, setCrossMatches] = useState<Record<string, IPartnerMatch[]>>({})
+  const [crossTotal, setCrossTotal] = useState(0)
+  const [crossLoading, setCrossLoading] = useState(false)
+
+  const [scanStatus, setScanStatus] = useState<IScanStatus | null>(null)
+  const [scanStatusLoading, setScanStatusLoading] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanProgress, setScanProgress] = useState<IScanProgress | null>(null)
+  const [clearingIndex, setClearingIndex] = useState(false)
+  const [pairVerdicts, setPairVerdicts] = useState(0)
+
   const [includePartners, setIncludePartnersState] = useState(false)
   const [partnersCanWin, setPartnersCanWinState] = useState(false)
   const [partnerScanning, setPartnerScanning] = useState(false)
@@ -95,14 +117,20 @@ export default function DeDuplicatorPage() {
 
   /** Bumped to abandon an in-flight partner scan (toggle off, or refetch). */
   const partnerScanToken = useRef(0)
+  /** Same idea for the cross-library index build, which runs for the better
+   *  part of an hour and has to stop the moment it is asked to. */
+  const scanToken = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const controlBarRef = useRef<HTMLDivElement>(null)
 
   /** Ids of every partner copy on screen. They can be chosen as a keeper but
    *  belong to another user, so they must be kept out of every write. */
   const partnerAssetIds = useMemo(
-    () => new Set(Object.values(partnerMatches).flat().map((m) => m.id)),
-    [partnerMatches]
+    () => new Set([
+      ...Object.values(partnerMatches).flat().map((m) => m.id),
+      ...Object.values(crossMatches).flat().map((m) => m.id),
+    ]),
+    [partnerMatches, crossMatches]
   )
 
   // ---------------------------------------------------------------- settings
@@ -114,6 +142,9 @@ export default function DeDuplicatorPage() {
     if (localStorage.getItem(PARTNERS_CAN_WIN_KEY) === 'true') setPartnersCanWinState(true)
     const saved = localStorage.getItem(ALBUM_TRANSFER_KEY)
     if (saved === 'always' || saved === 'never' || saved === 'ask') setAlbumTransferMode(saved)
+    if (localStorage.getItem(VIEW_KEY) === 'cross') setViewState('cross')
+    const band = localStorage.getItem(BAND_KEY)
+    if (band === 'exact' || band === 'near' || band === 'review') setCrossBandState(band)
   }, [])
 
   const rememberLocally = (key: string, value: string) => {
@@ -151,8 +182,29 @@ export default function DeDuplicatorPage() {
     getSetting(TAG_NAME_SETTING_KEY).then((v) => { if (v) setTagNameState(v) })
 
     listDismissals()
-      .then((res) => setSkipped(new Set(res.dismissals.filter((d) => !d.pairedAssetId).map((d) => d.groupKey))))
+      .then((res) => {
+        setSkipped(new Set(res.dismissals.filter((d) => !d.pairedAssetId).map((d) => d.groupKey)))
+        setPairVerdicts(res.dismissals.filter((d) => d.pairedAssetId).length)
+      })
       .catch(() => { /* nothing hidden is the safe default */ })
+  }, [])
+
+  const setView = useCallback((next: 'same' | 'cross') => {
+    setViewState(next)
+    rememberLocally(VIEW_KEY, next)
+    // The two lists hold different assets, and a selection carried across
+    // would silently apply to photos the user can no longer see.
+    setSelectedAssets(new Set())
+    setLastSelectedIndex(-1)
+    setAutoPickSummary(null)
+  }, [])
+
+  const setCrossBand = useCallback((next: Band) => {
+    setCrossBandState(next)
+    rememberLocally(BAND_KEY, next)
+    setSelectedAssets(new Set())
+    setLastSelectedIndex(-1)
+    setAutoPickSummary(null)
   }, [])
 
   const setDisposition = useCallback((value: Disposition) => {
@@ -211,6 +263,157 @@ export default function DeDuplicatorPage() {
 
   useEffect(() => { fetchDuplicates() }, [fetchDuplicates])
 
+  // ------------------------------------------------------- cross-library
+
+  const refreshScanStatus = useCallback(async () => {
+    setScanStatusLoading(true)
+    try {
+      setScanStatus(await getScanStatus())
+    } catch {
+      // A missing index is indistinguishable from a failed read here, and the
+      // panel copes with either by offering to scan.
+    } finally {
+      setScanStatusLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { refreshScanStatus() }, [refreshScanStatus])
+
+  const fetchCrossPairs = useCallback(async (band: Band) => {
+    setCrossLoading(true)
+    try {
+      const res = await getCrossLibraryPairs(band)
+      setCrossRecords(res.records)
+      setCrossMatches(res.matches)
+      setCrossTotal(res.total)
+      const ids = res.records.flatMap((r) => r.assets.map((a) => a.id))
+      // Only your own copies can be in your albums, and only your own copy can
+      // be trashed here -- so this is the same album-hole problem as the
+      // same-library list, and gets the same answer.
+      if (ids.length > 0) {
+        const albums = await getAlbumsByAssetIds(ids)
+        setAssetAlbums((prev) => ({ ...prev, ...albums }))
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e?.message || "Couldn't load cross-library matches.", variant: 'destructive' })
+    } finally {
+      setCrossLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (view !== 'cross' || !includePartners) return
+    fetchCrossPairs(crossBand)
+  }, [view, crossBand, includePartners, fetchCrossPairs])
+
+  // Turning partner comparison off takes the cross-library list with it: every
+  // cluster in it is half a partner's, so there is nothing left to show.
+  useEffect(() => {
+    if (includePartners) return
+    setCrossRecords([])
+    setCrossMatches({})
+    setCrossTotal(0)
+    if (view === 'cross') setView('same')
+  }, [includePartners, view, setView])
+
+  /**
+   * Build (or top up) the cross-library index.
+   *
+   * One HTTP call per chunk, looped here rather than held open server-side: a
+   * full first pass is around 50 minutes on a 100,000-photo library, and no
+   * single request should live that long. The cursor is stored in app.db, so
+   * stopping — or closing the tab, or losing the connection — costs only the
+   * chunk in flight.
+   */
+  const runScan = useCallback(async () => {
+    scanToken.current += 1
+    const token = scanToken.current
+    setScanning(true)
+    const startedAt = Date.now()
+    let probedThisRun = 0
+
+    try {
+      for (;;) {
+        if (scanToken.current !== token) return
+        const res = await runScanChunk()
+        if (scanToken.current !== token) return
+
+        probedThisRun += res.probed || 0
+        // ETA from this run's own throughput rather than the measured average:
+        // it adapts to whatever else the server happens to be doing.
+        const perAsset = probedThisRun > 0 ? (Date.now() - startedAt) / probedThisRun : null
+        setScanProgress({
+          scanned: res.scanned,
+          total: res.total,
+          etaMs: perAsset ? Math.round(perAsset * res.remaining) : null,
+          partnerName: res.partner?.name,
+        })
+        setScanStatus((prev) => (prev ? { ...prev, ...res } : prev))
+
+        if (res.error) {
+          toast({ title: 'Scan stopped', description: res.error, variant: 'destructive' })
+          break
+        }
+        if (res.done) {
+          const found = res.counts?.total ?? 0
+          toast({
+            title: 'Scan complete',
+            description: found > 0
+              ? `${found.toLocaleString()} photo${found === 1 ? '' : 's'} of yours also exist in a partner's library. Switch to Cross-library to work through them.`
+              : 'Nothing of yours turned up in a partner\'s library.',
+          })
+          break
+        }
+      }
+    } catch (e: any) {
+      if (scanToken.current === token) {
+        toast({
+          title: 'Scan failed',
+          description: (e?.message || 'Unknown error') + ' Progress up to this point is saved — press Continue to pick up where it stopped.',
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      if (scanToken.current === token) {
+        setScanning(false)
+        setScanProgress(null)
+        refreshScanStatus()
+        if (view === 'cross') fetchCrossPairs(crossBand)
+      }
+    }
+  }, [refreshScanStatus, view, crossBand, fetchCrossPairs])
+
+  const stopScan = useCallback(() => {
+    scanToken.current += 1
+    setScanning(false)
+    setScanProgress(null)
+    refreshScanStatus()
+    toast({ title: 'Scan stopped', description: 'Everything checked so far is saved. Continue whenever you like.' })
+  }, [refreshScanStatus])
+
+  // Leaving the page must not leave a loop running against an unmounted
+  // component -- and the server-side cursor means nothing is lost by stopping.
+  useEffect(() => () => { scanToken.current += 1 }, [])
+
+  const clearIndex = useCallback(async () => {
+    setClearingIndex(true)
+    scanToken.current += 1
+    setScanning(false)
+    setScanProgress(null)
+    try {
+      await clearScanIndex()
+      setCrossRecords([])
+      setCrossMatches({})
+      setCrossTotal(0)
+      await refreshScanStatus()
+      toast({ title: 'Index cleared', description: 'Nothing in your library changed. Scan again to rebuild it from scratch.' })
+    } catch (e: any) {
+      toast({ title: 'Error', description: e?.message || "Couldn't clear the index.", variant: 'destructive' })
+    } finally {
+      setClearingIndex(false)
+    }
+  }, [refreshScanStatus])
+
   useEffect(() => {
     const updateHeight = () => {
       const headerHeight = 48
@@ -229,7 +432,7 @@ export default function DeDuplicatorPage() {
       window.removeEventListener('resize', updateHeight)
       observer?.disconnect()
     }
-  }, [duplicates, disposition])
+  }, [duplicates, crossRecords, disposition, view])
 
   /**
    * Escape clears the selection -- but ONLY when it isn't already dismissing
@@ -279,14 +482,17 @@ export default function DeDuplicatorPage() {
 
   // --------------------------------------------------------------- filtering
 
-  /** Everything except the groups you've skipped. Search, album and
-   *  same/cross-library filters were removed: with cross-library scanning not
-   *  built yet the source chips could only ever show the same 270 groups under
-   *  three different labels, and narrowing a duplicate list by filename or
-   *  album turned out not to be how the work actually gets done. */
+  /** The list the screen is currently working on. Search and album filters
+   *  were removed in Phase 1 and stay gone -- narrowing a duplicate list by
+   *  filename or album turned out not to be how the work actually gets done.
+   *  The same/cross split is different: the two lists hold different assets
+   *  and ask different questions, so it is a switch rather than a filter. */
+  const activeRecords = view === 'cross' ? crossRecords : duplicates
+  const activeMatches = view === 'cross' ? crossMatches : partnerMatches
+
   const visibleDuplicates = useMemo(
-    () => duplicates.filter((record) => !skipped.has(record.duplicateId)),
-    [duplicates, skipped]
+    () => activeRecords.filter((record) => !skipped.has(record.duplicateId)),
+    [activeRecords, skipped]
   )
 
   const allAssetIds = useMemo(
@@ -342,7 +548,9 @@ export default function DeDuplicatorPage() {
 
   const handleClearSkips = useCallback(async () => {
     try {
-      await clearDismissals()
+      // Groups only: the "not the same photo" verdicts are a separate kind of
+      // decision and are cleared by their own control.
+      await clearDismissals('groups')
       setSkipped(new Set())
       toast({ title: 'Restored', description: 'Skipped groups are visible again.' })
     } catch (e: any) {
@@ -350,16 +558,33 @@ export default function DeDuplicatorPage() {
     }
   }, [])
 
+  const handleClearPairVerdicts = useCallback(async () => {
+    try {
+      await clearDismissals('pairs')
+      setPairVerdicts(0)
+      if (view === 'cross') await fetchCrossPairs(crossBand)
+      toast({
+        title: 'Forgotten',
+        description: 'Cross-library matches you marked as different photos will be offered again.',
+      })
+    } catch (e: any) {
+      toast({ title: 'Error', description: e?.message || "Couldn't clear those verdicts.", variant: 'destructive' })
+    }
+  }, [view, crossBand, fetchCrossPairs])
+
   // ------------------------------------------------------------- partner scan
 
   useEffect(() => {
     partnerScanToken.current += 1
     const token = partnerScanToken.current
 
-    if (!includePartners) {
+    // Cross-library clusters already arrive with their partner copies attached,
+    // read out of the index -- probing them again live would be the same work
+    // twice, at 30ms a photo.
+    if (!includePartners || view === 'cross') {
       setPartnerScanning(false)
       setPartnerProgress(null)
-      setPartnerMatches({})
+      if (!includePartners) setPartnerMatches({})
       return
     }
 
@@ -397,7 +622,7 @@ export default function DeDuplicatorPage() {
     })()
 
     return () => { cancelled = true }
-  }, [includePartners, duplicates])
+  }, [includePartners, duplicates, view])
 
   // ------------------------------------------------------------------ actions
 
@@ -417,6 +642,17 @@ export default function DeDuplicatorPage() {
     })
     return result
   }, [assetAlbums])
+
+  /** Drop resolved assets from whichever list they came from, and discard any
+   *  group left empty. Both lists are swept because the album transfer above
+   *  can touch a keeper that is on the other one. */
+  const removeResolved = (removedIds: Set<string>) => {
+    const sweep = (prev: IDuplicateAssetRecord[]) => prev
+      .map((r) => ({ ...r, assets: r.assets.filter((a) => !removedIds.has(a.id)) }))
+      .filter((r) => r.assets.length > 0)
+    setDuplicates(sweep)
+    setCrossRecords(sweep)
+  }
 
   /**
    * Apply the current disposition. Deliberately NOT wrapped in useCallback with
@@ -480,6 +716,7 @@ export default function DeDuplicatorPage() {
           variant: failedGroups > 0 ? 'destructive' : undefined,
         })
         await fetchDuplicates()
+        if (view === 'cross') await fetchCrossPairs(crossBand)
         return
       }
 
@@ -537,7 +774,7 @@ export default function DeDuplicatorPage() {
         }
         const discardedSet = new Set(actionableIds)
         let discardedSize = 0
-        duplicates.forEach((r) => r.assets.forEach((a) => {
+        activeRecords.forEach((r) => r.assets.forEach((a) => {
           if (discardedSet.has(a.id)) discardedSize += a.exifInfo?.fileSizeInByte || 0
         }))
         toast({
@@ -550,11 +787,7 @@ export default function DeDuplicatorPage() {
       }
 
       const removedIds = new Set([...keptIds, ...actionableIds])
-      setDuplicates((prev) =>
-        prev
-          .map((r) => ({ ...r, assets: r.assets.filter((a) => !removedIds.has(a.id)) }))
-          .filter((r) => r.assets.length > 0)
-      )
+      removeResolved(removedIds)
       setSelectedAssets((prev) => {
         const next = new Set(prev)
         removedIds.forEach((id) => next.delete(id))
@@ -583,27 +816,43 @@ export default function DeDuplicatorPage() {
       setPendingDedup({ keptIds, discardedIds, albumsToTransfer })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [albumTransferMode, getAlbumsToTransfer, disposition, duplicates, assetAlbums, tagName, visibleDuplicates])
+  }, [albumTransferMode, getAlbumsToTransfer, disposition, activeRecords, assetAlbums, tagName, visibleDuplicates])
 
   const handleKeepAllInRecord = useCallback(async (record: IDuplicateAssetRecord) => {
     setIsApplying(true)
     setApplyLabel('Updating')
     try {
-      await updateAssets({ ids: record.assets.map((a) => a.id), duplicateId: null })
-      setDuplicates((prev) => prev.filter((r) => r.duplicateId !== record.duplicateId))
+      if (record.source === 'cross') {
+        // Immich never made this match, so there is nothing to unset in it.
+        // The verdict is recorded against the pair instead, which is what
+        // stops the scan offering it again after the next rebuild.
+        const pairs = record.assets.flatMap((a) =>
+          (crossMatches[a.id] || []).map((m) => ({ groupKey: record.duplicateId, pairedAssetId: m.id })))
+        if (pairs.length > 0) await addDismissals({ pairs })
+        setPairVerdicts((n) => n + pairs.length)
+        setCrossRecords((prev) => prev.filter((r) => r.duplicateId !== record.duplicateId))
+        setCrossTotal((n) => Math.max(0, n - 1))
+        toast({
+          title: 'Not the same photo',
+          description: 'Both copies stay exactly as they are, and this match will not come back.',
+        })
+      } else {
+        await updateAssets({ ids: record.assets.map((a) => a.id), duplicateId: null })
+        setDuplicates((prev) => prev.filter((r) => r.duplicateId !== record.duplicateId))
+        toast({ title: 'Not duplicates', description: `${record.assets.length} assets kept. Immich will stop grouping them.` })
+      }
       setSelectedAssets((prev) => {
         const next = new Set(prev)
         record.assets.forEach((a) => next.delete(a.id))
         return next
       })
       setLastSelectedIndex(-1)
-      toast({ title: 'Not duplicates', description: `${record.assets.length} assets kept. Immich will stop grouping them.` })
     } catch (e: any) {
       toast({ title: 'Error', description: e.message || 'Failed to update assets.', variant: 'destructive' })
     } finally {
       setIsApplying(false)
     }
-  }, [])
+  }, [crossMatches])
 
   const handleAutoPick = useCallback(async () => {
     setAutoPicking(true)
@@ -611,26 +860,45 @@ export default function DeDuplicatorPage() {
       // A group counts as decided if either one of your copies OR a partner's
       // copy has been picked — otherwise auto-pick would add a second keeper
       // to a group you had already settled on the partner's copy.
+      const letPartnersWin = includePartners && partnersCanWin
+
       const groupsToPick = visibleDuplicates.filter((record) => {
         const ownPicked = record.assets.some((a) => selectedAssets.has(a.id))
         const partnerPicked = record.assets.some((a) =>
-          (partnerMatches[a.id] || []).some((m) => selectedAssets.has(m.id)))
-        return !ownPicked && !partnerPicked
+          (activeMatches[a.id] || []).some((m) => selectedAssets.has(m.id)))
+        if (ownPicked || partnerPicked) return false
+
+        if (record.source === 'cross') {
+          // A cross-library cluster holds exactly one copy of yours. The only
+          // decision available is "keep theirs instead", so with partner
+          // copies barred from winning there is nothing here to pick -- and
+          // ticking your own copy would mark thousands of clusters "decided"
+          // while deciding nothing.
+          if (!letPartnersWin) return false
+          // Review-band matches are the ones the measurements say are usually
+          // a coincidence. They are shown so they can be judged by eye, never
+          // swept.
+          if (record.band && !BANDS[record.band].autoPick) return false
+        }
+        return true
       })
       const skippedCount = visibleDuplicates.length - groupsToPick.length
-
-      const letPartnersWin = includePartners && partnersCanWin
       const payloadGroups = groupsToPick.map((record) => ({
         duplicateId: record.duplicateId,
         assetIds: record.assets.map((a) => a.id),
         partnerAssetIds: letPartnersWin
-          ? Array.from(new Set(record.assets.flatMap((a) => (partnerMatches[a.id] || []).map((m) => m.id))))
+          ? Array.from(new Set(record.assets.flatMap((a) => (activeMatches[a.id] || []).map((m) => m.id))))
           : [],
       }))
 
       if (payloadGroups.length === 0) {
         setAutoPickSummary({ picked: 0, undecided: 0, weakTiebreak: 0, skipped: skippedCount, partnerWins: 0, guarded: 0 })
-        toast({ title: 'Nothing to pick', description: 'Every visible group has already been decided.' })
+        toast({
+          title: 'Nothing to pick',
+          description: view === 'cross' && !letPartnersWin
+            ? 'In a cross-library match the only copy you own is your own, so auto-pick has nothing to choose between. Turn on "Let a partner\'s copy win auto-pick" in Options to use it here.'
+            : 'Every visible group has already been decided.',
+        })
         return
       }
 
@@ -679,7 +947,7 @@ export default function DeDuplicatorPage() {
     } finally {
       setAutoPicking(false)
     }
-  }, [visibleDuplicates, selectedAssets, partnerMatches, includePartners, partnersCanWin, ranking])
+  }, [visibleDuplicates, selectedAssets, activeMatches, includePartners, partnersCanWin, ranking, view])
 
   /** In keep mode, every group that has a keeper picked: what would happen to
    *  the rest if the user applied it. Groups with no pick are untouched. */
@@ -689,7 +957,7 @@ export default function DeDuplicatorPage() {
     for (const record of visibleDuplicates) {
       const ownKept = record.assets.filter((a) => selectedAssets.has(a.id))
       const partnerKept = record.assets.flatMap((a) =>
-        (partnerMatches[a.id] || []).filter((m) => selectedAssets.has(m.id)))
+        (activeMatches[a.id] || []).filter((m) => selectedAssets.has(m.id)))
       if (ownKept.length === 0 && partnerKept.length === 0) continue
       groups++
       if (ownKept.length === 0) partnerGroups++
@@ -700,19 +968,19 @@ export default function DeDuplicatorPage() {
       }
     }
     return { groups, discardCount, discardSize, partnerGroups }
-  }, [selectionMode, visibleDuplicates, selectedAssets, partnerMatches])
+  }, [selectionMode, visibleDuplicates, selectedAssets, activeMatches])
 
   const discardModeInfo = useMemo(() => {
     if (selectionMode !== 'discard') return { count: 0, totalSize: 0 }
     let count = 0, totalSize = 0
-    duplicates.forEach((r) => r.assets.forEach((a) => {
+    activeRecords.forEach((r) => r.assets.forEach((a) => {
       if (selectedAssets.has(a.id)) {
         count++
         totalSize += a.exifInfo?.fileSizeInByte || 0
       }
     }))
     return { count, totalSize }
-  }, [duplicates, selectedAssets, selectionMode])
+  }, [activeRecords, selectedAssets, selectionMode])
 
   const handleApplyKeepers = async () => {
     const keptIds: string[] = []
@@ -720,7 +988,7 @@ export default function DeDuplicatorPage() {
     for (const record of visibleDuplicates) {
       const ownKept = record.assets.filter((a) => selectedAssets.has(a.id)).map((a) => a.id)
       const partnerKept = Array.from(new Set(record.assets.flatMap((a) =>
-        (partnerMatches[a.id] || []).filter((m) => selectedAssets.has(m.id)).map((m) => m.id))))
+        (activeMatches[a.id] || []).filter((m) => selectedAssets.has(m.id)).map((m) => m.id))))
       if (ownKept.length === 0 && partnerKept.length === 0) continue
       keptIds.push(...ownKept, ...partnerKept)
       discardedIds.push(...record.assets.filter((a) => !selectedAssets.has(a.id)).map((a) => a.id))
@@ -743,9 +1011,17 @@ export default function DeDuplicatorPage() {
     if (selectedAssets.size === 0 || selectionMode !== 'discard') return
     const discardedIds = Array.from(selectedAssets).filter((id) => !partnerAssetIds.has(id))
     const keptIds: string[] = []
-    visibleDuplicates.forEach((r) => r.assets.forEach((a) => {
-      if (!selectedAssets.has(a.id)) keptIds.push(a.id)
-    }))
+    visibleDuplicates.forEach((r) => {
+      // Same-library: everything you did not tick counts as reviewed-and-kept,
+      // and gets its duplicateId cleared so the group stops coming back. That
+      // is the whole point of working in discard mode.
+      //
+      // Cross-library: a cluster you never touched has nothing to clear -- your
+      // copy has no duplicateId to begin with, Immich never grouped it. Sending
+      // it anyway would be up to 2,000 writes that change nothing.
+      if (r.source === 'cross' && !r.assets.some((a) => selectedAssets.has(a.id))) return
+      r.assets.forEach((a) => { if (!selectedAssets.has(a.id)) keptIds.push(a.id) })
+    })
     initiateDedup(keptIds, discardedIds)
   }
 
@@ -755,12 +1031,79 @@ export default function DeDuplicatorPage() {
 
   // ---------------------------------------------------------------- rendering
 
+  /** Whichever list is on screen is still loading. */
+  const busy = loading || (view === 'cross' && crossLoading)
+
+  /** Every cross-library cluster is half someone else's, and Immich cannot
+   *  stack an asset you do not own -- so in this view stacking has nothing it
+   *  could apply to. Said up front rather than reported as "1,847 skipped"
+   *  after the fact. */
+  const stackBlockedHere = view === 'cross' && disposition === 'stack'
+
   const info = DISPOSITIONS[disposition]
   const actionVerb = disposition === 'tag' ? 'Tag' : disposition === 'stack' ? 'Stack' : 'Trash'
   const ActionIcon = disposition === 'tag' ? Tag : disposition === 'stack' ? Layers : Trash2
 
+  /** The cross-library list only exists once something has been indexed, so
+   *  the switch that reaches it only exists then too -- an empty second tab
+   *  would just be a question the screen can't answer. */
+  const crossAvailable = includePartners && (scanStatus?.counts?.total ?? 0) > 0
+
   const controlBar = (
           <div ref={controlBarRef} className="flex flex-wrap items-center gap-3 border-b px-6 py-2">
+            {crossAvailable && (
+              <>
+                <div className="flex overflow-hidden rounded-md border">
+                  <Button
+                    variant={view === 'same' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-8 rounded-none border-0"
+                    onClick={() => setView('same')}
+                    title="Copies you own that Immich has grouped together"
+                  >
+                    <Layers size={14} className="mr-1" /> Same library
+                    <span className="ml-1.5 text-xs text-muted-foreground">
+                      {duplicates.length.toLocaleString()}
+                    </span>
+                  </Button>
+                  <Button
+                    variant={view === 'cross' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-8 rounded-none border-0"
+                    onClick={() => setView('cross')}
+                    title="Photos of yours that also exist in a partner's library"
+                  >
+                    <Users size={14} className="mr-1" /> Cross-library
+                    <span className="ml-1.5 text-xs text-muted-foreground">
+                      {(scanStatus?.counts?.total ?? 0).toLocaleString()}
+                    </span>
+                  </Button>
+                </div>
+
+                {view === 'cross' && (
+                  <div className="flex overflow-hidden rounded-md border">
+                    {BAND_ORDER.map((b) => (
+                      <Button
+                        key={b}
+                        variant={crossBand === b ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="h-8 rounded-none border-0"
+                        onClick={() => setCrossBand(b)}
+                        title={BANDS[b].summary}
+                      >
+                        {BANDS[b].label}
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {(scanStatus?.counts?.[b] ?? 0).toLocaleString()}
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="h-6 w-px bg-border" />
+              </>
+            )}
+
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Select to:</span>
             <div className="flex overflow-hidden rounded-md border">
               <Button
@@ -814,20 +1157,37 @@ export default function DeDuplicatorPage() {
               onPartnersCanWinChange={setPartnersCanWin}
               partnerScanning={partnerScanning}
               partnerProgress={partnerProgress}
+              scanStatus={scanStatus}
+              scanStatusLoading={scanStatusLoading}
+              scanning={scanning}
+              scanProgress={scanProgress}
+              onScan={runScan}
+              onStopScan={stopScan}
+              onClearIndex={clearIndex}
+              clearingIndex={clearingIndex}
               onAutoPick={handleAutoPick}
               autoPicking={autoPicking}
               autoPickSummary={autoPickSummary}
               dismissedCount={skipped.size}
               onClearDismissals={handleClearSkips}
-              disabled={loading || duplicates.length === 0}
+              pairVerdictCount={pairVerdicts}
+              onClearPairVerdicts={handleClearPairVerdicts}
+              disabled={loading || visibleDuplicates.length === 0}
             />
 
             <div className="flex-1" />
 
             <span className="text-sm text-muted-foreground">
-              {skipped.size > 0
-                ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups · ${skipped.size.toLocaleString()} skipped`
-                : `${duplicates.length.toLocaleString()} groups`}
+              {view === 'cross'
+                // The endpoint returns a page, not the world: 20,000 clusters
+                // of thumbnails is not a screen anyone can use. Applying or
+                // dismissing drains them, so reloading brings the next lot.
+                ? `${visibleDuplicates.length.toLocaleString()} shown`
+                  + (crossTotal > visibleDuplicates.length ? ` of ${crossTotal.toLocaleString()}` : '')
+                  + ` ${BANDS[crossBand].label.toLowerCase()} match${crossTotal === 1 ? '' : 'es'}`
+                : skipped.size > 0
+                  ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups · ${skipped.size.toLocaleString()} skipped`
+                  : `${duplicates.length.toLocaleString()} groups`}
             </span>
           </div>
   )
@@ -837,15 +1197,19 @@ export default function DeDuplicatorPage() {
       <Header
         leftComponent="De-Duplicator"
         rightComponent={
-          <Button onClick={fetchDuplicates} disabled={loading} className="flex items-center gap-2">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          <Button
+            onClick={() => (view === 'cross' ? fetchCrossPairs(crossBand) : fetchDuplicates())}
+            disabled={busy}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw size={16} className={busy ? 'animate-spin' : ''} />
             Refresh
           </Button>
         }
       />
 
       <div className="h-full overflow-hidden">
-        {(loading || error || duplicates.length === 0) && (
+        {(busy || error || activeRecords.length === 0) && (
           <div className="p-6 pb-0">
             <p className="mb-6 text-gray-600 dark:text-gray-400">
               Review duplicate copies and decide which one to keep. Discards go to Immich&apos;s
@@ -854,10 +1218,12 @@ export default function DeDuplicatorPage() {
           </div>
         )}
 
-        {loading && (
+        {busy && (
           <div className="flex items-center justify-center px-6 py-12">
             <Loader />
-            <span className="ml-2 text-gray-600 dark:text-gray-400">Loading duplicate groups…</span>
+            <span className="ml-2 text-gray-600 dark:text-gray-400">
+              {view === 'cross' ? 'Loading cross-library matches…' : 'Loading duplicate groups…'}
+            </span>
           </div>
         )}
 
@@ -875,35 +1241,48 @@ export default function DeDuplicatorPage() {
 
         {!loading && !error && controlBar}
 
-        {!loading && !error && duplicates.length === 0 && (
+        {!busy && !error && activeRecords.length === 0 && (
           <div className="px-6 py-12 text-center">
-            <Search size={48} className="mx-auto mb-4 text-gray-400" />
-            <h3 className="mb-2 text-lg font-medium text-gray-900 dark:text-white">No duplicates found</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Immich isn&apos;t grouping anything as duplicate right now.
-            </p>
+            {view === 'cross' ? (
+              <>
+                <Users size={48} className="mx-auto mb-4 text-gray-400" />
+                <h3 className="mb-2 text-lg font-medium text-gray-900 dark:text-white">
+                  Nothing in the {BANDS[crossBand].label.toLowerCase()} band
+                </h3>
+                <p className="mx-auto max-w-lg text-gray-600 dark:text-gray-400">
+                  {(scanStatus?.counts?.[crossBand] ?? 0) > 0
+                    ? 'Everything found in this band has been dealt with, dismissed, or is already showing in the same-library list.'
+                    : BANDS[crossBand].summary}
+                </p>
+              </>
+            ) : (
+              <>
+                <Search size={48} className="mx-auto mb-4 text-gray-400" />
+                <h3 className="mb-2 text-lg font-medium text-gray-900 dark:text-white">No duplicates found</h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Immich isn&apos;t grouping anything as duplicate right now.
+                </p>
+              </>
+            )}
           </div>
         )}
 
-        {!loading && !error && duplicates.length > 0 && (
-          <>
-
-            <div ref={containerRef} style={{ height: containerHeight }} className="overflow-hidden">
-              <VirtualizedDuplicateList
-                duplicates={visibleDuplicates}
-                selectedAssets={selectedAssets}
-                onAssetSelect={handleAssetSelect}
-                onKeepSelected={handleKeepSelected}
-                onKeepAllInRecord={handleKeepAllInRecord}
-                height={containerHeight}
-                selectionMode={selectionMode}
-                assetAlbums={assetAlbums}
-                partnerMatches={partnerMatches}
-                disposition={disposition}
-                onSkipRecord={handleSkipRecord}
-              />
-            </div>
-          </>
+        {!busy && !error && activeRecords.length > 0 && (
+          <div ref={containerRef} style={{ height: containerHeight }} className="overflow-hidden">
+            <VirtualizedDuplicateList
+              duplicates={visibleDuplicates}
+              selectedAssets={selectedAssets}
+              onAssetSelect={handleAssetSelect}
+              onKeepSelected={handleKeepSelected}
+              onKeepAllInRecord={handleKeepAllInRecord}
+              height={containerHeight}
+              selectionMode={selectionMode}
+              assetAlbums={assetAlbums}
+              partnerMatches={activeMatches}
+              disposition={disposition}
+              onSkipRecord={handleSkipRecord}
+            />
+          </div>
         )}
       </div>
 
@@ -958,19 +1337,24 @@ export default function DeDuplicatorPage() {
               }
               onConfirm={handleApplyKeepers}
               variant={info.destructive ? 'destructive' : 'default'}
-              disabled={keepModeInfo.discardCount === 0}
+              disabled={keepModeInfo.discardCount === 0 || stackBlockedHere}
             >
               <Button
                 variant={info.destructive ? 'destructive' : 'default'}
                 size="sm"
-                disabled={keepModeInfo.discardCount === 0}
+                disabled={keepModeInfo.discardCount === 0 || stackBlockedHere}
+                title={stackBlockedHere
+                  ? "Immich can only stack assets you own, and half of every cross-library match belongs to your partner. Switch the disposition to Trash or Tag."
+                  : undefined}
               >
                 <ActionIcon className="mr-2 h-4 w-4" />
-                {keepModeInfo.discardCount === 0
-                  ? 'Nothing to apply'
-                  : disposition === 'stack'
-                    ? `Stack ${keepModeInfo.groups.toLocaleString()} group${keepModeInfo.groups === 1 ? '' : 's'}`
-                    : `${actionVerb} ${keepModeInfo.discardCount.toLocaleString()} non-keeper${keepModeInfo.discardCount === 1 ? '' : 's'}`}
+                {stackBlockedHere
+                  ? "Cannot stack a partner's copy"
+                  : keepModeInfo.discardCount === 0
+                    ? 'Nothing to apply'
+                    : disposition === 'stack'
+                      ? `Stack ${keepModeInfo.groups.toLocaleString()} group${keepModeInfo.groups === 1 ? '' : 's'}`
+                      : `${actionVerb} ${keepModeInfo.discardCount.toLocaleString()} non-keeper${keepModeInfo.discardCount === 1 ? '' : 's'}`}
               </Button>
             </AlertDialog>
           </div>

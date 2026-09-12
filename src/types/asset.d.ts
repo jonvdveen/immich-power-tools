@@ -29,6 +29,18 @@ export interface IAssetThumbhash {
 export interface IDuplicateAssetRecord {
   duplicateId: string;
   assets:      IDuplicateAsset[];
+  /** Where this group came from. Absent means Immich's own grouping, which is
+   *  every group the same-library view shows. A "cross" record is one this app
+   *  found itself by searching a partner's library: it holds exactly one asset
+   *  of yours, and the partner's copies arrive as matches keyed on its id. */
+  source?:     "immich" | "cross";
+  /** Cross-library only — how confident the match is. See lib/duplicates/bands.ts. */
+  band?:       "exact" | "near" | "review";
+  /** Cross-library only — CLIP cosine distance to the closest partner copy. */
+  distance?:   number;
+  /** Cross-library only — whether the normalised filenames agree, which is the
+   *  independent corroboration that separates a match from a coincidence. */
+  stemMatch?:  boolean;
 }
 
 export interface IDuplicateAsset {

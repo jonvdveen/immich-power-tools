@@ -79,7 +79,7 @@ export const RANKING_CRITERIA: Record<RankingKey, IRankingCriterion> = {
   },
   owner: {
     key: "owner", label: "Owner", kind: "preference",
-    hint: "Only has an effect on cross-library matches. Preferring a partner's copy discards every copy you own in that group, leaving you relying on their library.",
+    hint: "Only has an effect on cross-library matches — where it decides which library keeps the photo. Preferring a partner's copy discards every copy you own in that cluster, leaving you relying on their library for it.",
     directions: ["Prefer my copy", "Prefer partner's copy"],
   },
   filename: {
@@ -140,4 +140,32 @@ export function normalizeRanking(input: unknown): IRankingRow[] {
 
 export function isDefaultRanking(rows: IRankingRow[]): boolean {
   return JSON.stringify(rows) === JSON.stringify(DEFAULT_RANKING);
+}
+
+/**
+ * Is this configuration set to hand a partner the win over a genuinely better
+ * copy of your own?
+ *
+ * Worth asking because the cross-library scan changes what this setting costs.
+ * Before it existed, "prefer partner's copy" could only affect the handful of
+ * Immich groups that happened to have a partner match overlaid on them. With
+ * the scan on, it applies to every photo the two libraries share — tens of
+ * thousands, on a household that has been sharing for years — and in each of
+ * those clusters your copy is the *only* one you own. Auto-picking the
+ * partner's copy there marks every single one of yours for the trash.
+ *
+ * That may be exactly what someone wants: one household, one canonical
+ * library. It is not something to discover afterwards, so the UI says so
+ * before the button is pressed. The metadata guard in autoPick.ts still holds
+ * regardless — this is about the copies where nothing would be lost except the
+ * copy itself.
+ */
+export function ownerOutranksQuality(rows: IRankingRow[]): boolean {
+  const ownerAt = rows.findIndex((r) => r.key === "owner");
+  if (ownerAt < 0) return false;
+  const owner = rows[ownerAt];
+  if (!owner.enabled || owner.direction !== "asc") return false;
+  return rows
+    .slice(ownerAt + 1)
+    .some((r) => r.enabled && RANKING_CRITERIA[r.key].kind === "substantive");
 }

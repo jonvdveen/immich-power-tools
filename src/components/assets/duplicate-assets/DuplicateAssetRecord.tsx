@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { humanizeBytes, humanizeNumber } from '@/helpers/string.helper'
 import { formatDate } from '@/helpers/date.helper'
 import { Camera, Calendar, EyeOff, FolderOpen, HardDrive, HelpCircle, Layers, Lock, MapPin, Trash2, Tag, Check, X, Shield, Users } from 'lucide-react'
+import { BANDS } from '@/lib/duplicates/bands'
 import { IAssetAlbumInfo } from '@/handlers/api/asset.handler'
 import { cn } from '@/lib/utils'
 import { DISPOSITIONS, Disposition } from '@/lib/duplicates/disposition'
@@ -297,6 +298,16 @@ export default function DuplicateAssetRecord({
     return { verb: 'to trash', savings: true, Icon: Trash2 }
   }, [disposition])
 
+  /** A cross-library cluster isn't an Immich duplicate group -- it is one copy
+   *  of yours and one or more in someone else's library, found by searching.
+   *  Every count and every verb below reads differently as a result, so it is
+   *  worth naming once rather than testing for it in six places. */
+  const isCross = record.source === 'cross'
+  const partnerName = useMemo(() => {
+    const first = record.assets.flatMap((a) => partnerMatches[a.id] || [])[0]
+    return first?.ownerName ?? 'your partner'
+  }, [record.assets, partnerMatches])
+
   const applyBlocked = disposition === 'stack' && selectedPartnerIds.length > 0
 
   const applyCopy = useMemo(() => {
@@ -305,6 +316,30 @@ export default function DuplicateAssetRecord({
       : unselectedInRecord
     const affected = selectionMode === 'keep' ? unselectedInRecord : selectedInRecord
     const affectedSize = selectionMode === 'keep' ? unselectedSize : selectedSize
+
+    // Cross-library has exactly one decision in it: whose library keeps the
+    // photo. "Trash 1 other" is technically true and tells the user nothing.
+    if (isCross) {
+      if (affected === 0) {
+        return {
+          button: 'Keeping yours',
+          title: 'Nothing to do',
+          description: `You have picked your own copy, so nothing changes. ${partnerName}'s copy stays in their library either way — this tool cannot touch it.`,
+        }
+      }
+      if (disposition === 'tag') {
+        return {
+          button: 'Tag my copy',
+          title: 'Tag your copy?',
+          description: `Tags your copy and leaves it exactly where it is, so you can review it in Immich. ${partnerName} keeps theirs regardless.`,
+        }
+      }
+      return {
+        button: 'Trash my copy',
+        title: `Keep ${partnerName}'s copy instead of yours?`,
+        description: `Moves your copy to Immich's trash${affectedSize > 0 ? ` (${humanizeBytes(affectedSize)})` : ''}, leaving ${partnerName}'s as the only one in the household. It stays recoverable until you empty the trash — but after that you are relying on their library for this photo, and you cannot delete or restore it from here.`,
+      }
+    }
 
     if (disposition === 'tag') {
       return {
@@ -328,7 +363,7 @@ export default function DuplicateAssetRecord({
       title: 'Move the other copies to trash?',
       description: `Keeps ${keeping} cop${keeping === 1 ? 'y' : 'ies'} and moves the other ${affected} to Immich's trash${affectedSize > 0 ? ` (${humanizeBytes(affectedSize)})` : ''}. They stay recoverable until you empty the trash in Immich.`,
     }
-  }, [disposition, selectionMode, selectedInRecord, unselectedInRecord, selectedSize, unselectedSize, selectedPartnerIds.length, record.assets.length])
+  }, [disposition, selectionMode, selectedInRecord, unselectedInRecord, selectedSize, unselectedSize, selectedPartnerIds.length, record.assets.length, isCross, partnerName])
 
   const handleKeepAll = () => {
     onKeepAllInRecord(record)
@@ -367,14 +402,33 @@ export default function DuplicateAssetRecord({
     <div className="mb-8">
       <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-            <div className="flex items-center gap-1">
-              <Camera size={16} />
-              {humanizeNumber(record.assets.length)} duplicate{record.assets.length !== 1 ? 's' : ''}
-            </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+            {isCross ? (
+              // Not "N duplicates": there is one copy of yours here, and the
+              // thing worth saying is where the other one lives and how sure
+              // we are that it is the same photograph.
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant={record.band === 'review' ? 'outline' : 'secondary'}
+                  className="gap-1"
+                  title={record.band ? BANDS[record.band].summary : undefined}
+                >
+                  <Users size={12} />
+                  {record.band ? BANDS[record.band].label : 'Cross-library'} match
+                </Badge>
+                <span>
+                  Also in <strong>{partnerName}</strong>&apos;s library
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <Camera size={16} />
+                {humanizeNumber(record.assets.length)} duplicate{record.assets.length !== 1 ? 's' : ''}
+              </div>
+            )}
             <div className="flex items-center gap-1">
               <HardDrive size={16} />
-              {humanizeBytes(totalSize)} total
+              {humanizeBytes(totalSize)}{isCross ? ' (your copy)' : ' total'}
             </div>
                       {selectedInRecord > 0 && (
             <div className="flex items-center gap-2 text-sm">
@@ -420,8 +474,13 @@ export default function DuplicateAssetRecord({
               )}
 
               <AlertDialog
-                title="Mark as not duplicates?"
-                description={`All ${record.assets.length} copies stay exactly as they are, and Immich stops grouping them. This clears the group in Immich itself, so it will not come back — use Skip instead if you only want it out of the way for now.`}
+                title={isCross ? 'Not the same photo?' : 'Mark as not duplicates?'}
+                description={isCross
+                  // Nothing to tell Immich here: it never made this match, this
+                  // app did. The verdict is recorded against the pair so the
+                  // scan stops offering it, and both copies are left alone.
+                  ? `Records that your copy and ${partnerName}'s are different photographs. Nothing is moved, tagged or removed, and this match stops coming back. It is remembered against your account, so it survives a rescan and follows you between browsers.`
+                  : `All ${record.assets.length} copies stay exactly as they are, and Immich stops grouping them. This clears the group in Immich itself, so it will not come back — use Skip instead if you only want it out of the way for now.`}
                 onConfirm={handleKeepAll}
                 asChild
               >
@@ -429,10 +488,12 @@ export default function DuplicateAssetRecord({
                   variant="outline"
                   size="sm"
                   className="flex items-center gap-1"
-                  title="Tell Immich these are not duplicates"
+                  title={isCross
+                    ? 'Different photographs — stop offering this match'
+                    : 'Tell Immich these are not duplicates'}
                 >
                   <Shield size={16} />
-                  Not duplicates
+                  {isCross ? 'Not the same photo' : 'Not duplicates'}
                 </Button>
               </AlertDialog>
 

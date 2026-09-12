@@ -144,4 +144,6 @@ export const WORKFLOW_RUN_DETAIL_PATH = (id: string, runId: string) => BASE_API_
 // both stored in this app's own SQLite rather than in Immich.
 export const DEDUPE_RANKING_PATH = BASE_API_ENDPOINT + "/dedupe/ranking";
 export const DEDUPE_DISMISSALS_PATH = BASE_API_ENDPOINT + "/dedupe/dismissals";
+export const DEDUPE_SCAN_PATH = BASE_API_ENDPOINT + "/dedupe/scan";
+export const DEDUPE_PAIRS_PATH = BASE_API_ENDPOINT + "/dedupe/pairs";
 export const SETTINGS_KV_PATH = (key: string) => BASE_API_ENDPOINT + "/settings/kv/" + key;

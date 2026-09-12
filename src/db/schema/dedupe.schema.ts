@@ -73,12 +73,20 @@ export const dedupePairs = sqliteTable("dedupe_pairs", {
  * Where the incremental scan got to, per (you, partner) pair. The watermark is
  * the highest asset createdAt already probed, so a top-up only walks assets
  * added since.
+ *
+ * `createdAt` alone is not a safe cursor: Immich stamps it from the
+ * transaction clock, so a bulk import can give hundreds of assets the same
+ * value. Resuming on `> watermark` would step over the rest of a tie, and
+ * `>= watermark` would loop on it forever once a tie ran longer than one
+ * chunk. The asset id breaks that tie, and (createdAt, id) is unique.
  */
 export const dedupeScanState = sqliteTable("dedupe_scan_state", {
   id: text("id").primaryKey().$defaultFn(() => randomUUID()),
   ownerId: text("owner_id").notNull(),
   partnerOwnerId: text("partner_owner_id").notNull(),
   watermark: integer("watermark", { mode: "timestamp" }),
+  /** Second half of the resume cursor — see the note above. */
+  cursorAssetId: text("cursor_asset_id"),
   scannedCount: integer("scanned_count").notNull().default(0),
   lastRunAt: integer("last_run_at", { mode: "timestamp" }),
 }, (t) => [
