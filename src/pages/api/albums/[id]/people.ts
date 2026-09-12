@@ -34,7 +34,7 @@ export default async function handler(
     .leftJoin(person, and(eq(assetFaces.personId, person.id), eq(person.isHidden, false)))
     .where(and(eq(albumUsers.userId, currentUser.id), eq(albums.id, id), isNotNull(person.id)))
     .orderBy(desc(person.name))
-    .groupBy(person.id);  
+    .groupBy(person.ownerId, person.id);  
 
   res.status(200).json(dbAlbumPeople);
 }

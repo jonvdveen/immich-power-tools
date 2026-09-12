@@ -75,7 +75,7 @@ export default async function handler(
       .leftJoin(assets, eq(assets.id, assetFaces.assetId))
       .where(whereClause)
       .having(lte(count(assetFaces.id), maximumAssetCount))
-      .groupBy(person.id);
+      .groupBy(person.ownerId, person.id);
 
     let sortedQuery;
     if (sort === "assetCount") {

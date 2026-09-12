@@ -21,7 +21,7 @@ export function buildConditions(
 
   const userClauses: SQL[] = [];
   for (const c of conditions) {
-    const clause = buildSingleCondition(c);
+    const clause = buildSingleCondition(c, ownerId);
     if (clause) userClauses.push(clause);
   }
 
@@ -31,7 +31,11 @@ export function buildConditions(
   return match === "any" ? [...base, or(...userClauses)!] : [...base, ...userClauses];
 }
 
-function buildSingleCondition(c: ICondition): SQL | undefined {
+/** `ownerId` is only needed by the person conditions, but it is threaded in
+ *  rather than left optional: since Immich 3.x a person group carries one
+ *  `person` row per user who named it, so a join that forgets the owner reads
+ *  someone else's names. */
+function buildSingleCondition(c: ICondition, ownerId: string): SQL | undefined {
   switch (c.type) {
     case "city":
       return c.match === "not_equals"
@@ -182,7 +186,7 @@ function buildSingleCondition(c: ICondition): SQL | undefined {
       if (c.match === "not_contains") {
         // Asset must not contain ANY of these people
         const checks = ids.map((pid: string) =>
-          sql`NOT EXISTS (SELECT 1 FROM "asset_face" af WHERE af."assetId" = ${assets.id} AND af."personId" = ${pid})`
+          sql`NOT EXISTS (SELECT 1 FROM "asset_face" af WHERE af."assetId" = ${assets.id} AND af."personGroupId" = ${pid})`
         );
         return and(...checks)!;
       }
@@ -190,14 +194,14 @@ function buildSingleCondition(c: ICondition): SQL | undefined {
       if (c.match === "contains_all") {
         // Asset must contain ALL of these people
         const checks = ids.map((pid: string) =>
-          sql`EXISTS (SELECT 1 FROM "asset_face" af WHERE af."assetId" = ${assets.id} AND af."personId" = ${pid})`
+          sql`EXISTS (SELECT 1 FROM "asset_face" af WHERE af."assetId" = ${assets.id} AND af."personGroupId" = ${pid})`
         );
         return and(...checks)!;
       }
 
       // contains_any (default) — asset contains at least one of these people
       const idList = ids.map((id: string) => `'${id}'`).join(",");
-      return sql`EXISTS (SELECT 1 FROM "asset_face" af WHERE af."assetId" = ${assets.id} AND af."personId" IN (${sql.raw(idList)}))`;
+      return sql`EXISTS (SELECT 1 FROM "asset_face" af WHERE af."assetId" = ${assets.id} AND af."personGroupId" IN (${sql.raw(idList)}))`;
     }
 
     case "tag": {
@@ -232,9 +236,12 @@ function buildSingleCondition(c: ICondition): SQL | undefined {
 
     case "person_unnamed":
       if (c.match === "no_unnamed") {
-        return sql`NOT EXISTS (SELECT 1 FROM "asset_face" af JOIN "person" p ON af."personId" = p.id WHERE af."assetId" = ${assets.id} AND (p.name = '' OR p.name IS NULL))`;
+        return sql`NOT EXISTS (SELECT 1 FROM "asset_face" af JOIN "person" p ON af."personGroupId" = p."personGroupId" AND p."ownerId" = ${ownerId} WHERE af."assetId" = ${assets.id} AND (p.name = '' OR p.name IS NULL))`;
       }
-      return sql`EXISTS (SELECT 1 FROM "asset_face" af JOIN "person" p ON af."personId" = p.id WHERE af."assetId" = ${assets.id} AND (p.name = '' OR p.name IS NULL))`;
+      // Owner-scoped: since Immich 3.x a person group carries one `person` row
+      // per user who has named it, so an unscoped join would let a partner's
+      // blank name decide whether YOUR asset counts as having an unnamed face.
+      return sql`EXISTS (SELECT 1 FROM "asset_face" af JOIN "person" p ON af."personGroupId" = p."personGroupId" AND p."ownerId" = ${ownerId} WHERE af."assetId" = ${assets.id} AND (p.name = '' OR p.name IS NULL))`;
 
     case "not_in_album":
       return sql`NOT EXISTS (SELECT 1 FROM "album_asset" aa WHERE aa."assetId" = ${assets.id})`;

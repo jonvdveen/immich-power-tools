@@ -59,7 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         isNotNull(person.id),
         ne(person.name, "")
       ))
-      .groupBy(person.id)
+      .groupBy(person.ownerId, person.id)
       .orderBy(desc(count(assets.id)));
 
     const cleanedPeople = dbPeople.map((person) => {

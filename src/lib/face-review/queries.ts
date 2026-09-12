@@ -61,7 +61,7 @@ const rowToFace = (r: any): IFaceReviewFace => ({
 /** Gate for every person-scoped route: does this person belong to this owner? */
 export async function personOwnedBy(personId: string, ownerId: string): Promise<boolean> {
   const { rows } = await db.execute(sql`
-    SELECT 1 FROM person WHERE id = ${personId} AND "ownerId" = ${ownerId} LIMIT 1
+    SELECT 1 FROM person WHERE "personGroupId" = ${personId} AND "ownerId" = ${ownerId} LIMIT 1
   `);
   return rows.length > 0;
 }
@@ -72,10 +72,10 @@ export async function getPersonMeta(personId: string, ownerId: string) {
            COUNT(a.id)::int AS face_count
       FROM person p
       LEFT JOIN asset_face af
-        ON af."personId" = p.id AND af."isVisible" = true AND af."deletedAt" IS NULL
+        ON af."personGroupId" = p."personGroupId" AND af."isVisible" = true AND af."deletedAt" IS NULL
       LEFT JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE}
-     WHERE p.id = ${personId} AND p."ownerId" = ${ownerId}
-     GROUP BY p.id
+     WHERE p."personGroupId" = ${personId} AND p."ownerId" = ${ownerId}
+     GROUP BY p."ownerId", p."personGroupId"
   `);
   const r: any = rows[0];
   if (!r) return null;
@@ -93,7 +93,7 @@ const CENTROID_CTE = (personId: string) => sql`
       FROM asset_face af
       JOIN face_search fs ON fs."faceId" = af.id
       JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE}
-     WHERE af."personId" = ${personId}
+     WHERE af."personGroupId" = ${personId}
        AND af."isVisible" = true AND af."deletedAt" IS NULL
   )
 `;
@@ -134,9 +134,9 @@ export async function getRankedFaces(
       FROM asset_face af
       LEFT JOIN face_search fs ON fs."faceId" = af.id
       JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
-      JOIN person p ON p.id = af."personId"
+      JOIN person p ON p."personGroupId" = af."personGroupId" AND p."ownerId" = ${ownerId}
       CROSS JOIN centroid
-     WHERE af."personId" = ${personId}
+     WHERE af."personGroupId" = ${personId}
        AND af."isVisible" = true AND af."deletedAt" IS NULL
        ${prebirth}
      ORDER BY ${orderBy}
@@ -162,7 +162,7 @@ async function fetchOwnFaceEmbeddings(personId: string, ownerId: string): Promis
       JOIN face_search fs ON fs."faceId" = af.id
       JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
       CROSS JOIN centroid
-     WHERE af."personId" = ${personId}
+     WHERE af."personGroupId" = ${personId}
        AND af."isVisible" = true AND af."deletedAt" IS NULL
   `);
   return rows.map((r: any) => ({ face: rowToFace(r), emb: r.emb }));
@@ -230,11 +230,11 @@ const scopeCondition = (scope: IFaceReviewScope) =>
     ? // ONLY faces already assigned to another real-named person (not
       // empty-name, not a Stranger/Rando split-off): candidates whose "yes"
       // explicitly moves them away from someone else.
-      sql`AND af."personId" IS NOT NULL AND p.name <> ''
+      sql`AND af."personGroupId" IS NOT NULL AND p.name <> ''
           AND p.name NOT LIKE ${STRANGER_PREFIXES[0] + "%"}
           AND p.name NOT LIKE ${STRANGER_PREFIXES[1] + "%"}`
     : // Unknown faces only: unassigned, empty-name person, or a stranger.
-      sql`AND (af."personId" IS NULL OR p.name = ''
+      sql`AND (af."personGroupId" IS NULL OR p.name = ''
            OR p.name LIKE ${STRANGER_PREFIXES[0] + "%"}
            OR p.name LIKE ${STRANGER_PREFIXES[1] + "%"})`;
 
@@ -245,16 +245,16 @@ const candidateSelect = (personId: string, ownerId: string, scope: IFaceReviewSc
          af."boundingBoxX1" AS x1, af."boundingBoxY1" AS y1,
          af."boundingBoxX2" AS x2, af."boundingBoxY2" AS y2,
          af."imageWidth" AS image_w, af."imageHeight" AS image_h,
-         af."personId"::text AS cur_person_id, p.name AS cur_name,
+         af."personGroupId"::text AS cur_person_id, p.name AS cur_name,
          COALESCE(a."localDateTime", a."fileCreatedAt") AS taken_at,
          fs.embedding::text AS emb
     FROM asset_face af
     JOIN face_search fs ON fs."faceId" = af.id
     JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
-    LEFT JOIN person p ON p.id = af."personId"
+    LEFT JOIN person p ON p."personGroupId" = af."personGroupId" AND p."ownerId" = ${ownerId}
     CROSS JOIN centroid
    WHERE af."isVisible" = true AND af."deletedAt" IS NULL
-     AND af."personId" IS DISTINCT FROM ${personId}::uuid
+     AND af."personGroupId" IS DISTINCT FROM ${personId}::uuid
      AND centroid.c IS NOT NULL
      ${excludeIds.length
        // Bound as one JSON string: drizzle/node-postgres array binding
@@ -350,14 +350,14 @@ export async function getPeopleWithCounts(
   // other views keep zero-face people visible (that's what "Delete empty
   // people" acts on).
   const { rows } = await db.execute(sql`
-    SELECT p.id::text AS id, p.name, p."birthDate" AS birth_date, p."isHidden" AS is_hidden,
+    SELECT p."personGroupId"::text AS id, p.name, p."birthDate" AS birth_date, p."isHidden" AS is_hidden,
            COUNT(a.id)::int AS face_count
       FROM person p
       LEFT JOIN asset_face af
-        ON af."personId" = p.id AND af."isVisible" = true AND af."deletedAt" IS NULL
+        ON af."personGroupId" = p."personGroupId" AND af."isVisible" = true AND af."deletedAt" IS NULL
       LEFT JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} ${prebirthJoin}
      WHERE p."ownerId" = ${ownerId} ${nameFilter} ${hiddenFilter}
-     GROUP BY p.id
+     GROUP BY p."ownerId", p."personGroupId"
     ${filter === "prebirth" ? sql`HAVING COUNT(a.id) > 0` : sql``}
      ORDER BY face_count DESC, p.name ASC
   `);
@@ -373,7 +373,7 @@ export async function getPeopleWithCounts(
 /** Autocomplete source + name resolution: the owner's REAL-named people. */
 export async function getNamedPeople(ownerId: string): Promise<{ id: string; name: string }[]> {
   const { rows } = await db.execute(sql`
-    SELECT p.id::text AS id, p.name
+    SELECT p."personGroupId"::text AS id, p.name
       FROM person p
      WHERE p."ownerId" = ${ownerId} AND p.name <> ''
        AND p.name NOT LIKE ${STRANGER_PREFIXES[0] + "%"}
@@ -395,7 +395,7 @@ export async function hideFace(faceId: string, ownerId: string): Promise<boolean
   if (!ownerId) throw new Error("ownerId required (multi-user DB, refusing unscoped update)");
   const result = await db.execute(sql`
     UPDATE asset_face af
-       SET "isVisible" = false, "personId" = NULL
+       SET "isVisible" = false, "personGroupId" = NULL
       FROM asset a
      WHERE af.id = ${faceId}
        AND a.id = af."assetId"
@@ -409,21 +409,30 @@ export async function hideFace(faceId: string, ownerId: string): Promise<boolean
  * Delete the owner's person records with zero visible, non-deleted faces —
  * the debris failed/retried reassigns leave behind. ownerId REQUIRED (an
  * unscoped delete on the shared table would hit other users' records).
+ *
+ * The owner filter is now load-bearing in TWO places, not one. Under the old
+ * schema this read `WHERE id IN (SELECT p.id ...)` and the inner owner filter
+ * was enough, because `person.id` identified exactly one row. In Immich 3.x
+ * the key is `(ownerId, personGroupId)` — the same group id belongs to every
+ * user who has named that person — so matching on the group id alone would
+ * delete other people's names for the same face cluster. Hence the outer
+ * `"ownerId" =` as well.
  */
 export async function deleteEmptyPeople(ownerId: string): Promise<number> {
   if (!ownerId) throw new Error("ownerId required (multi-user DB, refusing unscoped delete)");
   const result = await db.execute(sql`
     DELETE FROM person
-     WHERE id IN (
-       SELECT p.id FROM person p
-        WHERE p."ownerId" = ${ownerId}
-          AND NOT EXISTS (
-            SELECT 1 FROM asset_face af
-             WHERE af."personId" = p.id
-               AND af."isVisible" = true
-               AND af."deletedAt" IS NULL
-          )
-     )
+     WHERE "ownerId" = ${ownerId}
+       AND "personGroupId" IN (
+         SELECT p."personGroupId" FROM person p
+          WHERE p."ownerId" = ${ownerId}
+            AND NOT EXISTS (
+              SELECT 1 FROM asset_face af
+               WHERE af."personGroupId" = p."personGroupId"
+                 AND af."isVisible" = true
+                 AND af."deletedAt" IS NULL
+            )
+       )
   `);
   return result.rowCount ?? 0;
 }
@@ -442,10 +451,10 @@ export async function getFeatureFaceStatus(
            (SELECT af."assetId"::text
               FROM asset_face af
               JOIN asset a ON a.id = af."assetId" AND a."deletedAt" IS NULL AND ${VIEWABLE} AND a."ownerId" = ${ownerId}
-             WHERE af."personId" = p.id AND af."isVisible" = true AND af."deletedAt" IS NULL
+             WHERE af."personGroupId" = p."personGroupId" AND af."isVisible" = true AND af."deletedAt" IS NULL
              LIMIT 1) AS sample_asset_id
       FROM person p
-     WHERE p.id = ${personId} AND p."ownerId" = ${ownerId}
+     WHERE p."personGroupId" = ${personId} AND p."ownerId" = ${ownerId}
   `);
   const r: any = rows[0];
   return { hasFeatureFace: !!r?.has_feature_face, sampleAssetId: r?.sample_asset_id ?? null };
@@ -454,7 +463,7 @@ export async function getFeatureFaceStatus(
 /** Exact-name match among the owner's people (case-insensitive). */
 export async function findPersonByName(ownerId: string, name: string): Promise<string | null> {
   const { rows } = await db.execute(sql`
-    SELECT p.id::text AS id FROM person p
+    SELECT p."personGroupId"::text AS id FROM person p
      WHERE p."ownerId" = ${ownerId} AND LOWER(TRIM(p.name)) = LOWER(TRIM(${name}))
      LIMIT 1
   `);

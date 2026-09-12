@@ -68,6 +68,69 @@ upstream, the GHCR image path in `release.yml` and the compose file, the
 reason disappears), and the still-open upstream PRs #304–#312 etc. listed
 above, which would become moot.
 
+## Immich 3.2.0 upgrade — face schema break (fixed 2026-09-12)
+
+Immich auto-updated to **3.2.0** (the compose file tracks `:release`) and
+restructured face recognition. Both face modules — **Manage People** (`/`) and
+**Face Review** (`/face-review`) — died with
+`column asset_face.personId does not exist`. Albums, Rewind, share links and the
+workflow person conditions were hit too; nobody had noticed those yet.
+
+What changed in Immich:
+
+- Face clusters moved into a new `person_group` table. `asset_face."personId"`
+  became `asset_face."personGroupId"`.
+- **`person` lost its `id` column entirely.** A `person` row is now one owner's
+  *naming* of a person group, keyed `(ownerId, personGroupId)`. Two users can
+  name the same cluster differently — this is the groundwork for face
+  recognition across partner-shared libraries.
+- New `cluster_group`, one per user today (`user."clusterGroupId"`), so person
+  groups are not yet shared between accounts.
+
+The REST API did **not** change: `PersonResponseDto.id` and
+`AssetFaceUpdateItem.personId` are unchanged, and that `id` *is* the
+`personGroupId`. So the fix lives entirely in the ORM mapping and raw SQL, and
+the app keeps using Immich's own naming.
+
+Three things a plain column rename would have got wrong — all found by running
+the queries against the live DB rather than by reading them:
+
+1. **`GROUP BY p.id` stopped being legal.** Postgres only lets you select
+   ungrouped columns when the GROUP BY covers a primary key. The PK is now
+   `(ownerId, personGroupId)`, so every grouped person query needs both halves.
+   Five places (one raw, four drizzle `.groupBy`).
+2. **`deleteEmptyPeople` would have deleted other users' rows.** It matched on
+   the group id alone, which used to be globally unique and no longer is. The
+   outer `DELETE` now filters `ownerId` as well as the inner `SELECT`.
+3. **Person joins need owner scoping.** `JOIN person p ON p."personGroupId" =
+   af."personGroupId"` matches every user who named that cluster. Added
+   `AND p."ownerId" = ...` in the face-review joins and the workflow
+   `person_unnamed` condition (which meant threading `ownerId` into
+   `buildSingleCondition`).
+
+Verified: 18 of the app's own Face Review functions run against the live
+database (all pass); drizzle proven to emit `"person"."personGroupId"`; the
+Manage People query returns real counts and its ids resolve to real
+`person_group` rows; the app's declared schema now diffs clean against Immich
+3.2.0.
+
+- **FACE-1 — latent, not live: unscoped person joins elsewhere.** The read-only
+  drizzle joins in `albums/list.ts`, `albums/[id]/people.ts`, `rewind/stats.ts`,
+  `share-link/[token]/people.ts`, `people/[id]/similar-faces.ts` and
+  `workflow/actionExecutor.ts` still join person without an owner filter. Today
+  every user has their own `cluster_group` and no person group has two owners,
+  so each join matches exactly one row and results are correct. If Immich ever
+  shares cluster groups between partners — which is plainly what the redesign is
+  for — these will double-count or read a partner's name. Fix them then, or
+  pre-emptively.
+- **FACE-2 — not verified in a browser.** The whole investigation was
+  server-side; nobody has clicked through either module since the fix. Both were
+  proven at the query layer against live data.
+- **FACE-3 — the app pins nothing.** `immich-server:release` will do this again.
+  Worth a note in POWER-TOOLS.md that a major Immich bump can break the direct-SQL
+  modules, and that `information_schema` diffing (the script used here) finds it
+  in seconds.
+
 ## De-Duplicator (`/assets/de-duplicator`) — supersedes Bulk Duplicate Finder
 
 **Phase 1 released in v0.35.0 (2026-09-10). Phase 2 built the same day,

@@ -99,7 +99,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   ))
   .orderBy(desc(count(assets.id)))
   .limit(2)
-  .groupBy(person.id);
+  .groupBy(person.ownerId, person.id);
 
   const favoritedAssets = await db
   .select({ id: assets.id })
