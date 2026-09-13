@@ -65,6 +65,15 @@ export interface IScanStatus {
   counts: { exact: number; near: number; review: number; total: number };
 }
 
+/** Live progress of a scan run, assembled by the client from chunk replies. */
+export interface IScanProgress {
+  scanned: number;
+  total: number;
+  /** Rolling estimate from this run's own throughput; null until there is one. */
+  etaMs: number | null;
+  partnerName?: string;
+}
+
 export interface IScanChunkResult extends IScanStatus {
   done: boolean;
   stalled?: boolean;

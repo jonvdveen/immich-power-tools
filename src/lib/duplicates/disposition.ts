@@ -25,7 +25,7 @@ export const DISPOSITIONS: Record<Disposition, IDispositionInfo> = {
     value: "trash",
     label: "Move to trash",
     summary:
-      "Discards go to Immich's trash, recoverable until you empty it there. This tool never deletes permanently.",
+      "Goes to Immich's trash. Recoverable until you empty it there. Nothing here ever deletes permanently.",
     crossLibrary: true,
     destructive: true,
   },
@@ -33,7 +33,7 @@ export const DISPOSITIONS: Record<Disposition, IDispositionInfo> = {
     value: "tag",
     label: "Tag only",
     summary:
-      "Discards stay where they are and get a tag, so you can review them in Immich and delete them on your own terms.",
+      "Stays where it is and gets a tag. Nothing is removed — you delete them yourself, in Immich.",
     crossLibrary: true,
     destructive: false,
   },
@@ -41,7 +41,7 @@ export const DISPOSITIONS: Record<Disposition, IDispositionInfo> = {
     value: "stack",
     label: "Stack",
     summary:
-      "Collapses the group into one timeline entry behind the keeper. Nothing is deleted and nothing is tagged.",
+      "Collapses the group into one timeline entry behind the keeper. Nothing is deleted or tagged.",
     // Immich cannot stack an asset you do not own, so a group whose keeper or
     // discards include a partner's copy is skipped rather than half-applied.
     crossLibrary: false,

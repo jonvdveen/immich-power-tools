@@ -1,35 +1,27 @@
 import {
-  Archive, Info, Layers, Loader2, Settings2, Sparkles, Tag, Trash2, TriangleAlert, Users,
+  ChevronRight, Layers, Loader2, RotateCcw, Tag, Trash2, TriangleAlert, Users,
 } from 'lucide-react'
-import React from 'react'
+import React, { useState } from 'react'
 
-import CrossLibraryScanPanel, { IScanProgress } from '@/components/assets/duplicate-assets/CrossLibraryScanPanel'
 import RankingEditor from '@/components/assets/duplicate-assets/RankingEditor'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
+  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
+import { formatDistanceToNow } from 'date-fns'
 import { IScanStatus } from '@/handlers/api/dedupe.handler'
+import { BANDS, BAND_ORDER } from '@/lib/duplicates/bands'
 import { DISPOSITIONS, Disposition } from '@/lib/duplicates/disposition'
-import { IRankingRow, ownerOutranksQuality } from '@/lib/duplicates/ranking'
+import { IRankingRow, RANKING_CRITERIA, ownerOutranksQuality } from '@/lib/duplicates/ranking'
 import { cn } from '@/lib/utils'
 
 export type AlbumTransferMode = 'always' | 'never' | 'ask'
 
-export interface IAutoPickSummary {
-  picked: number
-  weakTiebreak: number
-  undecided: number
-  skipped: number
-  partnerWins: number
-  guarded: number
-}
-
 interface DeDuplicatorOptionsProps {
-  /** Controlled so the disposition button in the toolbar can open it too. */
+  /** Controlled so the toolbar's Options button can open it too. */
   open: boolean
   onOpenChange: (open: boolean) => void
   disposition: Disposition
@@ -48,30 +40,17 @@ interface DeDuplicatorOptionsProps {
   onIncludePartnersChange: (value: boolean) => void
   partnersCanWin: boolean
   onPartnersCanWinChange: (value: boolean) => void
-  partnerScanning: boolean
-  partnerProgress: { done: number; total: number } | null
 
+  /** Null until the first status read lands. */
   scanStatus: IScanStatus | null
-  scanStatusLoading: boolean
-  scanning: boolean
-  scanProgress: IScanProgress | null
-  onScan: () => void
-  onStopScan: () => void
   onClearIndex: () => void
   clearingIndex: boolean
-
-  onAutoPick: () => void
-  autoPicking: boolean
-  autoPickSummary: IAutoPickSummary | null
+  scanning: boolean
 
   dismissedCount: number
   onClearDismissals: () => void
-  /** Cross-library pairs marked "not the same photo". A different kind of
-   *  decision from a skip, so it gets its own count and its own reset. */
   pairVerdictCount: number
   onClearPairVerdicts: () => void
-
-  disabled?: boolean
 }
 
 const DISPOSITION_ICONS: Record<Disposition, React.ReactNode> = {
@@ -80,12 +59,55 @@ const DISPOSITION_ICONS: Record<Disposition, React.ReactNode> = {
   stack: <Layers size={14} />,
 }
 
+type SectionKey = 'discards' | 'rules' | 'partners' | 'aside'
+
+/**
+ * One collapsible row. The summary is the point of the whole redesign: most
+ * visits to this panel are to CHECK a setting, not change it, and a summary
+ * answers that with no clicks at all.
+ */
+function Section({
+  id, open, onToggle, title, summary, flag, children,
+}: {
+  id: SectionKey
+  open: boolean
+  onToggle: (id: SectionKey) => void
+  title: string
+  summary: React.ReactNode
+  flag?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="border-t first:border-t-0">
+      <button
+        type="button"
+        onClick={() => onToggle(id)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 py-3 text-left"
+      >
+        <ChevronRight
+          size={14}
+          className={cn('shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium">{title}</span>
+          <span className="block truncate text-xs text-muted-foreground">{summary}</span>
+        </span>
+        {flag}
+      </button>
+      {open && <div className="space-y-3 pb-4 pl-[26px] pr-0.5">{children}</div>}
+    </div>
+  )
+}
+
 /**
  * Everything that changes what the De-Duplicator compares, how it decides, and
  * what it does with the copies you didn't keep.
  *
- * A side sheet rather than a popover: the ranking editor is ten reorderable
- * rows and does not fit a dropdown without becoming unusable.
+ * Deliberately holds no verbs. Auto-pick and Scan used to live in here, which
+ * made a settings drawer the place you went to do the work; both now sit on the
+ * toolbar beside the thing they act on. What is left is settings, one
+ * collapsible row each.
  */
 export default function DeDuplicatorOptions({
   open, onOpenChange,
@@ -94,38 +116,208 @@ export default function DeDuplicatorOptions({
   ranking, onRankingChange, onRankingReset, rankingSaving,
   includePartners, onIncludePartnersChange,
   partnersCanWin, onPartnersCanWinChange,
-  partnerScanning, partnerProgress,
-  scanStatus, scanStatusLoading, scanning, scanProgress,
-  onScan, onStopScan, onClearIndex, clearingIndex,
-  onAutoPick, autoPicking, autoPickSummary,
+  scanStatus, onClearIndex, clearingIndex, scanning,
   dismissedCount, onClearDismissals,
   pairVerdictCount, onClearPairVerdicts,
-  disabled,
 }: DeDuplicatorOptionsProps) {
+  const [openSection, setOpenSection] = useState<SectionKey | null>(null)
+  const toggle = (id: SectionKey) => setOpenSection((cur) => (cur === id ? null : id))
+
+  const partners = scanStatus?.partners ?? []
+  /** No incoming share means nothing here is actionable: you cannot start one
+   *  from this app, the other person does it in Immich. So the whole section
+   *  is absent rather than present-but-dead. */
+  const hasPartner = partners.length > 0
+  const partnerName = partners.length === 1 ? partners[0].name : 'a partner'
+  const indexed = scanStatus?.counts?.total ?? 0
+  const loaded = scanStatus !== null
+
+  const armed = ownerOutranksQuality(ranking) && hasPartner
+
+  // ---- collapsed summaries -------------------------------------------------
+
+  const discardSummary = [
+    DISPOSITIONS[disposition].label,
+    disposition === 'tag' ? `as "${tagName.trim() || 'Duplicate'}"` : null,
+    disposition === 'trash'
+      ? albumTransferMode === 'always' ? 'keeper added to their albums'
+        : albumTransferMode === 'ask' ? 'asks about albums'
+          : 'albums left alone'
+      : null,
+  ].filter(Boolean).join(' · ')
+
+  const enabledRules = ranking.filter((r) => r.enabled && !(r.key === 'owner' && !hasPartner))
+  const rulesSummary = enabledRules.length === 0
+    ? 'Nothing enabled — the choice will be arbitrary'
+    : enabledRules.slice(0, 4).map((r) => RANKING_CRITERIA[r.key].label).join(' → ')
+      + (enabledRules.length > 4 ? ` → +${enabledRules.length - 4} more` : '')
+
+  const partnerSummary = !includePartners
+    ? 'Off'
+    : [
+      'On',
+      scanning ? 'scanning now'
+        : scanStatus?.lastRunAt
+          ? (scanStatus.remaining > 0 ? 'index part-way through' : 'index up to date')
+          : 'not searched yet',
+      indexed > 0 ? `${indexed.toLocaleString()} matches` : null,
+    ].filter(Boolean).join(' · ')
+
+  const asideSummary = dismissedCount === 0 && pairVerdictCount === 0
+    ? 'Nothing set aside'
+    : [
+      dismissedCount > 0 ? `${dismissedCount.toLocaleString()} skipped group${dismissedCount === 1 ? '' : 's'}` : null,
+      pairVerdictCount > 0 ? `${pairVerdictCount.toLocaleString()} marked not the same photo` : null,
+    ].filter(Boolean).join(' · ')
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="flex items-center gap-2">
-          <Settings2 size={16} />
-          Options
-        </Button>
-      </SheetTrigger>
       <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>De-Duplicator options</SheetTitle>
           <SheetDescription>
-            Settings are saved to your account, so they follow you between browsers.
+            Saved to your account, so they follow you between browsers.
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6 space-y-6">
+        <div className="mt-5">
 
-          {/* --- What happens to the discards --- */}
-          <section className="space-y-2">
-            <Label className="flex items-center gap-2 text-sm font-medium">
-              <Archive size={14} />
-              What to do with the copies you don&apos;t keep
-            </Label>
+          {/* ----------------------------------------------- partner shares */}
+          {loaded && hasPartner && (
+            <Section
+              id="partners" open={openSection === 'partners'} onToggle={toggle}
+              title="Partner Shares"
+              summary={partnerSummary}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
+                  <Label className="flex items-center gap-2 text-sm font-medium">
+                    <Users size={14} />
+                    Compare against partner photos
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Show copies that exist in a partner&apos;s library.
+                  </p>
+                </div>
+                <Switch
+                  checked={includePartners}
+                  onCheckedChange={onIncludePartnersChange}
+                  className="mt-0.5 data-[state=unchecked]:bg-gray-300 dark:data-[state=unchecked]:bg-gray-600 data-[state=checked]:bg-blue-600 dark:data-[state=checked]:bg-blue-500"
+                />
+              </div>
+
+              <div className={cn(
+                'space-y-3 border-l pl-3',
+                !includePartners && 'pointer-events-none opacity-50'
+              )}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">
+                      Let a partner&apos;s copy win auto-pick
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Auto-select can choose their copy, which discards yours. This tool can
+                      never remove theirs — they belong to someone else.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Yours is kept anyway if it has a location, tags, a description or a
+                      favourite that theirs doesn&apos;t: those can&apos;t be moved onto a
+                      photo you don&apos;t own, so they would be lost.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={includePartners && partnersCanWin}
+                    onCheckedChange={onPartnersCanWinChange}
+                    disabled={!includePartners}
+                    className="mt-0.5 data-[state=unchecked]:bg-gray-300 dark:data-[state=unchecked]:bg-gray-600 data-[state=checked]:bg-blue-600 dark:data-[state=checked]:bg-blue-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Cross-library index</Label>
+                  {indexed > 0 ? (
+                    <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                      {BAND_ORDER.map((b) => (
+                        <span key={b} title={BANDS[b].summary}>
+                          {BANDS[b].label} <strong>{(scanStatus?.counts?.[b] ?? 0).toLocaleString()}</strong>
+                        </span>
+                      ))}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Nothing indexed yet — use <strong>Scan</strong> on the toolbar.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {scanStatus?.lastRunAt
+                      ? `Last run ${formatDistanceToNow(new Date(scanStatus.lastRunAt), { addSuffix: true })}. `
+                      : ''}
+                    Topping up looks at <strong>your</strong> new photos, so a copy {partnerName} adds
+                    to an old photo of yours needs a full re-scan. Photos Immich already groups as
+                    duplicates stay in My library.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-1 w-full"
+                    onClick={onClearIndex}
+                    disabled={scanning || clearingIndex || indexed === 0}
+                    title="Throw the index away and search everything again from scratch"
+                  >
+                    {clearingIndex
+                      ? <><Loader2 size={14} className="mr-2 animate-spin" /> Clearing…</>
+                      : <><RotateCcw size={14} className="mr-2" /> Clear index and start over</>}
+                  </Button>
+                </div>
+              </div>
+            </Section>
+          )}
+
+          {/* --------------------------------------------- auto-select rules */}
+          <Section
+            id="rules" open={openSection === 'rules'} onToggle={toggle}
+            title="Auto-select Rules"
+            summary={rulesSummary}
+            flag={armed ? (
+              <span className="shrink-0 rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-600 dark:text-red-400">
+                check
+              </span>
+            ) : undefined}
+          >
+            <RankingEditor
+              ranking={ranking}
+              onChange={onRankingChange}
+              onReset={onRankingReset}
+              saving={rankingSaving}
+              ownerInert={!hasPartner}
+            />
+
+            {/* Two callouts survive, down from five. Both change what happens
+                to your photos; the other three were limitations, and are now
+                one-line hints under the controls they describe. */}
+            {armed && (
+              <div className="flex gap-2 rounded-md border border-red-500/50 bg-red-500/10 p-2">
+                <TriangleAlert size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-500" />
+                <p className="text-xs text-muted-foreground">
+                  <strong className="text-red-700 dark:text-red-400">
+                    Owner is set to prefer {partnerName}&apos;s copy, above your quality criteria.
+                  </strong>{' '}
+                  In a cross-library match your copy is the only one you own, so auto-pick will
+                  mark <em>every</em> one of them for {DISPOSITIONS[disposition].label.toLowerCase()}
+                  {' '}— even where yours is the sharper or larger file. Move Owner below
+                  Resolution and File size if that isn&apos;t what you meant. Nothing happens
+                  until you apply.
+                </p>
+              </div>
+            )}
+          </Section>
+
+          {/* ------------------------------------------- disposition rules */}
+          <Section
+            id="discards" open={openSection === 'discards'} onToggle={toggle}
+            title="Disposition Rules"
+            summary={discardSummary}
+          >
             <div className="grid grid-cols-3 gap-1 rounded-lg border p-1">
               {(Object.keys(DISPOSITIONS) as Disposition[]).map((value) => (
                 <Button
@@ -140,10 +332,15 @@ export default function DeDuplicatorOptions({
                 </Button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">{DISPOSITIONS[disposition].summary}</p>
+            <p className="text-xs text-muted-foreground">
+              {DISPOSITIONS[disposition].summary}
+              {/* Demoted from its own amber callout: it is a limitation, not a
+                  risk to your photos. */}
+              {disposition === 'stack' && ' Immich only stacks assets you own, so any group with a partner’s copy is skipped.'}
+            </p>
 
             {disposition === 'tag' && (
-              <div className="space-y-1 pt-1">
+              <div className="space-y-1">
                 <Label className="text-xs">Tag to apply</Label>
                 <Input
                   value={tagName}
@@ -152,17 +349,14 @@ export default function DeDuplicatorOptions({
                   className="h-8 text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Created if it doesn&apos;t exist. Applied through Immich&apos;s tag API, so
-                  the sidecar stays in step.
+                  Created if it doesn&apos;t exist. Written through Immich, so sidecars stay
+                  in step.
                 </p>
               </div>
             )}
 
-            {/* Only trash removes the discarded copy, so only trash can leave a
-                hole in an album. Shown here rather than in the toolbar because
-                it is a rule about what happens when you apply, not a filter. */}
             {disposition === 'trash' && (
-              <div className="space-y-1 pt-1">
+              <div className="space-y-1">
                 <Label className="text-xs">
                   If a discarded copy is in an album the keeper isn&apos;t
                 </Label>
@@ -180,232 +374,56 @@ export default function DeDuplicatorOptions({
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Trashing a duplicate that was in an album removes it from that album.
-                  &ldquo;Add keeper&rdquo; puts the copy you kept in first, so the album
-                  keeps the photo. On a cross-library match that means adding your
-                  partner&apos;s copy to your album — the photo stays, but you no longer own
-                  the file behind it.
+                  Trashing a copy removes it from its albums. &ldquo;Add keeper&rdquo; puts the
+                  one you kept in first, so the album keeps the photo.
+                  {hasPartner && ' On a cross-library match that means adding your partner’s copy to your album.'}
                 </p>
               </div>
             )}
+          </Section>
 
-            {disposition === 'stack' && (
-              <div className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2">
-                <Info size={14} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-500" />
-                <p className="text-xs text-muted-foreground">
-                  Immich can only stack assets you own, so any group involving a
-                  partner&apos;s copy is <strong>skipped</strong> rather than half-applied.
-                </p>
-              </div>
-            )}
-          </section>
-
-          <div className="border-t" />
-
-          {/* --- Ranking --- */}
-          <section className="space-y-2">
-            <Label className="flex items-center gap-2 text-sm font-medium">
-              <Sparkles size={14} />
-              How auto-pick chooses a keeper
-            </Label>
-            <RankingEditor
-              ranking={ranking}
-              onChange={onRankingChange}
-              onReset={onRankingReset}
-              saving={rankingSaving}
-            />
-            <div className="flex gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-2">
-              <Info size={14} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+          {/* ---------------------------------------------------- set aside */}
+          <Section
+            id="aside" open={openSection === 'aside'} onToggle={toggle}
+            title="Set Aside"
+            summary={asideSummary}
+          >
+            <div className="space-y-1">
+              <Label className="text-xs">
+                {dismissedCount.toLocaleString()} skipped group{dismissedCount === 1 ? '' : 's'}
+              </Label>
               <p className="text-xs text-muted-foreground">
-                Wherever you put <strong>Owner</strong>, a partner&apos;s copy is never
-                auto-picked as the keeper when your copy carries GPS, a description, tags
-                or a favourite that theirs lacks — that metadata cannot be written to an
-                asset you don&apos;t own, so it would be lost for good.
+                Hidden from this screen. Nothing in Immich was changed.
               </p>
+              <Button
+                size="sm" variant="outline" className="w-full"
+                onClick={onClearDismissals}
+                disabled={dismissedCount === 0}
+              >
+                Restore all skipped groups
+              </Button>
             </div>
-            {ownerOutranksQuality(ranking) && (
-              <div className="flex gap-2 rounded-md border border-red-500/50 bg-red-500/10 p-2">
-                <TriangleAlert size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-500" />
-                <p className="text-xs text-muted-foreground">
-                  <strong className="text-red-700 dark:text-red-400">
-                    Owner is set to &ldquo;prefer partner&apos;s copy&rdquo; above your quality
-                    criteria.
-                  </strong>{' '}
-                  In a cross-library match your copy is the only one you own, so auto-pick will
-                  mark <em>every</em> one of them for {DISPOSITIONS[disposition].label.toLowerCase()}
-                  {' '}— even where yours is the sharper or larger file. That is a reasonable
-                  choice if you want one library to hold everything; move Owner below Resolution
-                  and File size if it isn&apos;t what you meant. Nothing happens until you apply.
-                </p>
-              </div>
-            )}
-            <Button
-              size="sm"
-              variant="secondary"
-              className="w-full"
-              onClick={onAutoPick}
-              disabled={autoPicking || disabled}
-            >
-              {autoPicking
-                ? <><Loader2 size={14} className="mr-2 animate-spin" /> Picking…</>
-                : <><Sparkles size={14} className="mr-2" /> Auto-pick keepers</>}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Fills in the selection only — <strong>nothing is removed</strong>, and groups
-              you have already decided are left alone.
-            </p>
-            {autoPickSummary && (
-              <p className="text-xs text-muted-foreground">
-                Picked <strong>{autoPickSummary.picked.toLocaleString()}</strong> keeper
-                {autoPickSummary.picked === 1 ? '' : 's'}
-                {autoPickSummary.weakTiebreak > 0 && (
-                  <> · <strong>{autoPickSummary.weakTiebreak.toLocaleString()}</strong> settled
-                    on a tiebreak — worth a glance</>
-                )}
-                {autoPickSummary.partnerWins > 0 && (
-                  <> · <strong>{autoPickSummary.partnerWins.toLocaleString()}</strong> keeping
-                    a partner&apos;s copy</>
-                )}
-                {autoPickSummary.guarded > 0 && (
-                  <> · <strong>{autoPickSummary.guarded.toLocaleString()}</strong> kept yours
-                    to protect metadata</>
-                )}
-                {autoPickSummary.skipped > 0 && (
-                  <> · <strong>{autoPickSummary.skipped.toLocaleString()}</strong> already
-                    decided, left alone</>
-                )}
-              </p>
-            )}
-          </section>
 
-          <div className="border-t" />
-
-          {/* --- Partner-shared photos --- */}
-          <section className="space-y-2">
-            <div className="flex items-start justify-between gap-3">
+            {hasPartner && (
               <div className="space-y-1">
-                <Label className="flex items-center gap-2 text-sm font-medium">
-                  <Users size={14} />
-                  Compare against partner photos
+                <Label className="text-xs">
+                  {pairVerdictCount.toLocaleString()} cross-library verdict{pairVerdictCount === 1 ? '' : 's'}
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Also show copies that exist in a partner&apos;s library, so you can see
-                  when a photo is already held elsewhere.
+                  Pairs you said are different photographs. They won&apos;t be offered again,
+                  even after a rescan.
                 </p>
+                <Button
+                  size="sm" variant="outline" className="w-full"
+                  onClick={onClearPairVerdicts}
+                  disabled={pairVerdictCount === 0}
+                >
+                  Forget those verdicts
+                </Button>
               </div>
-              {/* Not disabled while scanning: the scan takes minutes on a large
-                  library, and switching off is how you cancel it. */}
-              <Switch
-                checked={includePartners}
-                onCheckedChange={onIncludePartnersChange}
-                className="data-[state=unchecked]:bg-gray-300 dark:data-[state=unchecked]:bg-gray-600 data-[state=checked]:bg-blue-600 dark:data-[state=checked]:bg-blue-500"
-              />
-            </div>
-            <div className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2">
-              <Info size={14} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-500" />
-              <p className="text-xs text-muted-foreground">
-                Partner photos belong to someone else&apos;s library, so this tool
-                <strong> can never remove them</strong>. You <em>can</em> choose a
-                partner&apos;s copy as the keeper, which discards your own copies and leaves
-                you relying on their library for that photo.
-              </p>
-            </div>
-            <div className={cn(
-              'ml-3 space-y-2 border-l pl-3',
-              !includePartners && 'pointer-events-none opacity-50'
-            )}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium">
-                    Let a partner&apos;s copy win auto-pick
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Include partner copies as keep candidates. Subject to the metadata
-                    guard above.
-                  </p>
-                </div>
-                <Switch
-                  checked={includePartners && partnersCanWin}
-                  onCheckedChange={onPartnersCanWinChange}
-                  disabled={!includePartners}
-                  className="data-[state=unchecked]:bg-gray-300 dark:data-[state=unchecked]:bg-gray-600 data-[state=checked]:bg-blue-600 dark:data-[state=checked]:bg-blue-500"
-                />
-              </div>
-            </div>
-            {partnerScanning && (
-              <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 size={12} className="animate-spin" />
-                Looking for partner copies of the groups on screen
-                {partnerProgress
-                  ? ` — ${partnerProgress.done.toLocaleString()} of ${partnerProgress.total.toLocaleString()} groups`
-                  : ''}…
-              </p>
             )}
-          </section>
+          </Section>
 
-          <div className="border-t" />
-
-          {/* --- Cross-library index --- */}
-          <section className={cn('space-y-2', !includePartners && 'pointer-events-none opacity-50')}>
-            <CrossLibraryScanPanel
-              status={scanStatus}
-              loadingStatus={scanStatusLoading}
-              scanning={scanning}
-              progress={scanProgress}
-              onScan={onScan}
-              onStop={onStopScan}
-              onClear={onClearIndex}
-              clearing={clearingIndex}
-              enabled={includePartners}
-            />
-            {!includePartners && (
-              <p className="text-xs text-muted-foreground">
-                Turn on <strong>Compare against partner photos</strong> above to use this.
-              </p>
-            )}
-          </section>
-
-          <div className="border-t" />
-
-          {/* --- Things you have set aside --- */}
-          <section className="space-y-2">
-            <Label className="text-sm font-medium">Skipped groups</Label>
-            <p className="text-xs text-muted-foreground">
-              Skipping hides a group from this view and nothing else — it writes nothing to
-              Immich and follows you between browsers. Use it for the ones you are not ready
-              to decide; use <strong>Not duplicates</strong> when you want Immich to stop
-              grouping them for good. {dismissedCount > 0
-                ? `${dismissedCount.toLocaleString()} currently hidden.`
-                : 'None hidden yet.'}
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={onClearDismissals}
-              disabled={dismissedCount === 0}
-            >
-              Restore all skipped groups
-            </Button>
-
-            <Label className="block pt-2 text-sm font-medium">Cross-library verdicts</Label>
-            <p className="text-xs text-muted-foreground">
-              Marking a cross-library match <strong>Not the same photo</strong> is remembered
-              here rather than in Immich, which never made the match in the first place. It
-              survives a rescan. {pairVerdictCount > 0
-                ? `${pairVerdictCount.toLocaleString()} recorded.`
-                : 'None recorded yet.'}
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={onClearPairVerdicts}
-              disabled={pairVerdictCount === 0}
-            >
-              Forget those verdicts
-            </Button>
-          </section>
         </div>
       </SheetContent>
     </Sheet>

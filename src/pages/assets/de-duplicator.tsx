@@ -1,8 +1,10 @@
-import { Layers, Loader2, RefreshCw, Search, Shield, Tag, Trash2, Users } from 'lucide-react'
+import {
+  Layers, Loader2, RefreshCw, Search, Settings2, Shield, Sparkles, Square, Tag, Trash2, Users,
+} from 'lucide-react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import AlbumTransferDialog from '@/components/assets/duplicate-assets/AlbumTransferDialog'
-import DeDuplicatorOptions, { IAutoPickSummary } from '@/components/assets/duplicate-assets/DeDuplicatorOptions'
+import DeDuplicatorOptions from '@/components/assets/duplicate-assets/DeDuplicatorOptions'
 import VirtualizedDuplicateList from '@/components/assets/duplicate-assets/VirtualizedDuplicateList'
 import PageLayout from '@/components/layouts/PageLayout'
 import FloatingBar from '@/components/shared/FloatingBar'
@@ -18,17 +20,16 @@ import {
 } from '@/handlers/api/asset.handler'
 import {
   addDismissals, clearDismissals, clearScanIndex, getCrossLibraryPairs, getRankingConfig,
-  getScanStatus, getSetting, IScanStatus, listDismissals, putRankingConfig, putSetting,
-  resetRankingConfig, runScanChunk,
+  getScanStatus, getSetting, IScanProgress, IScanStatus, listDismissals, putRankingConfig,
+  putSetting, resetRankingConfig, runScanChunk,
 } from '@/handlers/api/dedupe.handler'
 import { bulkTagAssets, upsertTags } from '@/handlers/api/tag.handler'
-import { humanizeBytes } from '@/helpers/string.helper'
+import { humanizeBytes, humanizeDuration } from '@/helpers/string.helper'
 import API from '@/lib/api'
 import {
   DEFAULT_TAG_NAME, DISPOSITIONS, DISPOSITION_SETTING_KEY, Disposition,
   TAG_NAME_SETTING_KEY, isDisposition,
 } from '@/lib/duplicates/disposition'
-import { IScanProgress } from '@/components/assets/duplicate-assets/CrossLibraryScanPanel'
 import { BANDS, BAND_ORDER, Band } from '@/lib/duplicates/bands'
 import { DEFAULT_RANKING, IRankingRow } from '@/lib/duplicates/ranking'
 import { cn } from '@/lib/utils'
@@ -113,7 +114,6 @@ export default function DeDuplicatorPage() {
   const [partnerProgress, setPartnerProgress] = useState<{ done: number; total: number } | null>(null)
   const [autoPicking, setAutoPicking] = useState(false)
   const [optionsOpen, setOptionsOpen] = useState(false)
-  const [autoPickSummary, setAutoPickSummary] = useState<IAutoPickSummary | null>(null)
 
   /** Bumped to abandon an in-flight partner scan (toggle off, or refetch). */
   const partnerScanToken = useRef(0)
@@ -196,7 +196,6 @@ export default function DeDuplicatorPage() {
     // would silently apply to photos the user can no longer see.
     setSelectedAssets(new Set())
     setLastSelectedIndex(-1)
-    setAutoPickSummary(null)
   }, [])
 
   const setCrossBand = useCallback((next: Band) => {
@@ -204,7 +203,6 @@ export default function DeDuplicatorPage() {
     rememberLocally(BAND_KEY, next)
     setSelectedAssets(new Set())
     setLastSelectedIndex(-1)
-    setAutoPickSummary(null)
   }, [])
 
   const setDisposition = useCallback((value: Disposition) => {
@@ -892,7 +890,6 @@ export default function DeDuplicatorPage() {
       }))
 
       if (payloadGroups.length === 0) {
-        setAutoPickSummary({ picked: 0, undecided: 0, weakTiebreak: 0, skipped: skippedCount, partnerWins: 0, guarded: 0 })
         toast({
           title: 'Nothing to pick',
           description: view === 'cross' && !letPartnersWin
@@ -930,10 +927,6 @@ export default function DeDuplicatorPage() {
         return next
       })
 
-      setAutoPickSummary({
-        picked: keeperIds.length, undecided: 0, weakTiebreak: weakCount,
-        skipped: skippedCount, partnerWins, guarded: guardedCount,
-      })
       toast({
         title: 'Keepers picked',
         description: `${keeperIds.length.toLocaleString()} picked`
@@ -1045,64 +1038,156 @@ export default function DeDuplicatorPage() {
   const ActionIcon = disposition === 'tag' ? Tag : disposition === 'stack' ? Layers : Trash2
 
   /** The cross-library list only exists once something has been indexed, so
-   *  the switch that reaches it only exists then too -- an empty second tab
-   *  would just be a question the screen can't answer. */
+   *  the switch that reaches it only exists then too. */
   const crossAvailable = includePartners && (scanStatus?.counts?.total ?? 0) > 0
+  /** Nobody shares a library with this account: the whole cross-library half
+   *  of this screen is not just empty, it is unreachable. Hide rather than
+   *  disable — you cannot start a partner share from here. */
+  const hasPartner = (scanStatus?.partners?.length ?? 0) > 0
+  const scanPercent = scanProgress && scanProgress.total > 0
+    ? Math.min(100, Math.round((scanProgress.scanned / scanProgress.total) * 100))
+    : 0
+  const scanOutstanding = scanStatus?.remaining ?? 0
+
+  /** Selected segment of a segmented control. Grey-on-grey was too quiet to
+   *  find at a glance -- which list you are looking at is the single most
+   *  consequential thing on the screen, so it gets a filled accent. */
+  const segment = (active: boolean) =>
+    cn('h-8 rounded-none border-0', active && 'bg-blue-600 text-white hover:bg-blue-700 hover:text-white')
+  const segmentCount = (active: boolean) =>
+    cn('ml-1.5 text-xs', active ? 'text-blue-100' : 'text-muted-foreground')
+
+  /** Which list is on screen. It sits in the page header beside Refresh rather
+   *  than in the control bar: everything in that bar acts on the current list,
+   *  and this chooses which list that is. */
+  const libraryToggle = crossAvailable && (
+    <div className="flex overflow-hidden rounded-md border">
+      <Button
+        variant={view === 'same' ? 'default' : 'ghost'}
+        size="sm"
+        className={segment(view === 'same')}
+        onClick={() => setView('same')}
+        title="Copies you own that Immich has grouped together"
+      >
+        <Layers size={14} className="mr-1" /> My library
+        <span className={segmentCount(view === 'same')}>
+          {duplicates.length.toLocaleString()}
+        </span>
+      </Button>
+      <Button
+        variant={view === 'cross' ? 'default' : 'ghost'}
+        size="sm"
+        className={segment(view === 'cross')}
+        onClick={() => setView('cross')}
+        title="Photos of yours that also exist in a partner's library"
+      >
+        <Users size={14} className="mr-1" /> Cross-library
+        <span className={segmentCount(view === 'cross')}>
+          {(scanStatus?.counts?.total ?? 0).toLocaleString()}
+        </span>
+      </Button>
+    </div>
+  )
 
   const controlBar = (
-          <div ref={controlBarRef} className="flex flex-wrap items-center gap-3 border-b px-6 py-2">
-            {crossAvailable && (
+          <div ref={controlBarRef} className="flex flex-wrap items-center gap-2 border-b px-6 py-2">
+            {/* Options leads. It used to sit at the end of the bar looking like
+                an afterthought, which is odd for the control that reaches every
+                setting on the screen. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 font-medium"
+              onClick={() => setOptionsOpen(true)}
+              title="Everything this screen compares, how it decides, and what happens to the discards"
+            >
+              <Settings2 size={14} className="mr-1.5" />
+              Options
+            </Button>
+
+            {/* Scan lives beside the view it populates, and only exists when
+                there is a partner library to compare against. */}
+            {hasPartner && includePartners && (
+              scanning ? (
+                <span className="flex h-8 items-center gap-2 rounded-md border border-blue-500/50 bg-blue-500/10 px-2.5 text-xs">
+                  <Loader2 size={13} className="animate-spin text-blue-600 dark:text-blue-400" />
+                  <span
+                    className="tabular-nums"
+                    title={scanProgress
+                      ? `${scanProgress.scanned.toLocaleString()} of ${scanProgress.total.toLocaleString()} photos checked`
+                      : undefined}
+                  >
+                    Scanning {scanPercent}%
+                    {scanProgress?.etaMs != null && ` · ${humanizeDuration(scanProgress.etaMs)} left`}
+                  </span>
+                  <button
+                    onClick={stopScan}
+                    className="rounded px-1 text-muted-foreground hover:text-foreground"
+                    title="Stop. Everything checked so far is saved."
+                  >
+                    <Square size={11} />
+                  </button>
+                </span>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={runScan}
+                  disabled={clearingIndex}
+                  title={scanOutstanding > 0
+                    ? `${scanOutstanding.toLocaleString()} of your photos have not been compared against a partner's library yet.`
+                    : "Every photo has been compared. This checks for anything added since."}
+                >
+                  <Search size={14} className="mr-1.5" />
+                  {scanOutstanding > 0 ? (
+                    <>Scan <span className="ml-1.5 text-xs text-muted-foreground">
+                      {scanOutstanding.toLocaleString()}
+                    </span></>
+                  ) : 'Check for new'}
+                </Button>
+              )
+            )}
+
+            {/* The two verbs sit together, after Options: Scan fills the
+                cross-library list, Auto-pick fills the selection. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={handleAutoPick}
+              disabled={autoPicking || busy || visibleDuplicates.length === 0}
+              title="Propose a keeper for every undecided group, using your Auto-select Rules. Nothing is removed — review, then apply."
+            >
+              {autoPicking
+                ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Picking…</>
+                : <><Sparkles size={14} className="mr-1.5" /> Auto-pick</>}
+            </Button>
+
+            {crossAvailable && view === 'cross' && (
               <>
-                <div className="flex overflow-hidden rounded-md border">
-                  <Button
-                    variant={view === 'same' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-8 rounded-none border-0"
-                    onClick={() => setView('same')}
-                    title="Copies you own that Immich has grouped together"
-                  >
-                    <Layers size={14} className="mr-1" /> Same library
-                    <span className="ml-1.5 text-xs text-muted-foreground">
-                      {duplicates.length.toLocaleString()}
-                    </span>
-                  </Button>
-                  <Button
-                    variant={view === 'cross' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-8 rounded-none border-0"
-                    onClick={() => setView('cross')}
-                    title="Photos of yours that also exist in a partner's library"
-                  >
-                    <Users size={14} className="mr-1" /> Cross-library
-                    <span className="ml-1.5 text-xs text-muted-foreground">
-                      {(scanStatus?.counts?.total ?? 0).toLocaleString()}
-                    </span>
-                  </Button>
-                </div>
-
-                {view === 'cross' && (
-                  <div className="flex overflow-hidden rounded-md border">
-                    {BAND_ORDER.map((b) => (
-                      <Button
-                        key={b}
-                        variant={crossBand === b ? 'secondary' : 'ghost'}
-                        size="sm"
-                        className="h-8 rounded-none border-0"
-                        onClick={() => setCrossBand(b)}
-                        title={BANDS[b].summary}
-                      >
-                        {BANDS[b].label}
-                        <span className="ml-1.5 text-xs text-muted-foreground">
-                          {(scanStatus?.counts?.[b] ?? 0).toLocaleString()}
-                        </span>
-                      </Button>
-                    ))}
-                  </div>
-                )}
-
                 <div className="h-6 w-px bg-border" />
+                <div className="flex overflow-hidden rounded-md border">
+                  {BAND_ORDER.map((b) => (
+                    <Button
+                      key={b}
+                      variant={crossBand === b ? 'default' : 'ghost'}
+                      size="sm"
+                      className={segment(crossBand === b)}
+                      onClick={() => setCrossBand(b)}
+                      title={BANDS[b].summary}
+                    >
+                      {BANDS[b].label}
+                      <span className={segmentCount(crossBand === b)}>
+                        {(scanStatus?.counts?.[b] ?? 0).toLocaleString()}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
               </>
             )}
+
+            <div className="h-6 w-px bg-border" />
 
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Select to:</span>
             <div className="flex overflow-hidden rounded-md border">
@@ -1138,6 +1223,26 @@ export default function DeDuplicatorPage() {
               {info.label}
             </Button>
 
+            <div className="flex-1" />
+
+            {partnerScanning && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 size={12} className="animate-spin" />
+                Looking for partner copies
+                {partnerProgress ? ` — ${partnerProgress.done.toLocaleString()} of ${partnerProgress.total.toLocaleString()}` : ''}…
+              </span>
+            )}
+
+            <span className="text-sm text-muted-foreground">
+              {view === 'cross'
+                ? `${visibleDuplicates.length.toLocaleString()} shown`
+                  + (crossTotal > visibleDuplicates.length ? ` of ${crossTotal.toLocaleString()}` : '')
+                  + ` ${BANDS[crossBand].label.toLowerCase()} match${crossTotal === 1 ? '' : 'es'}`
+                : skipped.size > 0
+                  ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups · ${skipped.size.toLocaleString()} skipped`
+                  : `${duplicates.length.toLocaleString()} groups`}
+            </span>
+
             <DeDuplicatorOptions
               open={optionsOpen}
               onOpenChange={setOptionsOpen}
@@ -1155,40 +1260,15 @@ export default function DeDuplicatorPage() {
               onIncludePartnersChange={setIncludePartners}
               partnersCanWin={partnersCanWin}
               onPartnersCanWinChange={setPartnersCanWin}
-              partnerScanning={partnerScanning}
-              partnerProgress={partnerProgress}
               scanStatus={scanStatus}
-              scanStatusLoading={scanStatusLoading}
-              scanning={scanning}
-              scanProgress={scanProgress}
-              onScan={runScan}
-              onStopScan={stopScan}
               onClearIndex={clearIndex}
               clearingIndex={clearingIndex}
-              onAutoPick={handleAutoPick}
-              autoPicking={autoPicking}
-              autoPickSummary={autoPickSummary}
+              scanning={scanning}
               dismissedCount={skipped.size}
               onClearDismissals={handleClearSkips}
               pairVerdictCount={pairVerdicts}
               onClearPairVerdicts={handleClearPairVerdicts}
-              disabled={loading || visibleDuplicates.length === 0}
             />
-
-            <div className="flex-1" />
-
-            <span className="text-sm text-muted-foreground">
-              {view === 'cross'
-                // The endpoint returns a page, not the world: 20,000 clusters
-                // of thumbnails is not a screen anyone can use. Applying or
-                // dismissing drains them, so reloading brings the next lot.
-                ? `${visibleDuplicates.length.toLocaleString()} shown`
-                  + (crossTotal > visibleDuplicates.length ? ` of ${crossTotal.toLocaleString()}` : '')
-                  + ` ${BANDS[crossBand].label.toLowerCase()} match${crossTotal === 1 ? '' : 'es'}`
-                : skipped.size > 0
-                  ? `Showing ${visibleDuplicates.length.toLocaleString()} of ${duplicates.length.toLocaleString()} groups · ${skipped.size.toLocaleString()} skipped`
-                  : `${duplicates.length.toLocaleString()} groups`}
-            </span>
           </div>
   )
 
@@ -1197,14 +1277,18 @@ export default function DeDuplicatorPage() {
       <Header
         leftComponent="De-Duplicator"
         rightComponent={
-          <Button
-            onClick={() => (view === 'cross' ? fetchCrossPairs(crossBand) : fetchDuplicates())}
-            disabled={busy}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw size={16} className={busy ? 'animate-spin' : ''} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {libraryToggle}
+            <Button
+              size="sm"
+              onClick={() => (view === 'cross' ? fetchCrossPairs(crossBand) : fetchDuplicates())}
+              disabled={busy}
+              className="flex h-8 items-center gap-1.5"
+            >
+              <RefreshCw size={14} className={busy ? 'animate-spin' : ''} />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -1251,7 +1335,7 @@ export default function DeDuplicatorPage() {
                 </h3>
                 <p className="mx-auto max-w-lg text-gray-600 dark:text-gray-400">
                   {(scanStatus?.counts?.[crossBand] ?? 0) > 0
-                    ? 'Everything found in this band has been dealt with, dismissed, or is already showing in the same-library list.'
+                    ? 'Everything found in this band has been dealt with, dismissed, or is already showing in My library.'
                     : BANDS[crossBand].summary}
                 </p>
               </>

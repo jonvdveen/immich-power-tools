@@ -16,6 +16,10 @@ interface RankingEditorProps {
   onChange: (ranking: IRankingRow[]) => void
   onReset: () => void
   saving?: boolean
+  /** True when nobody shares a library with this account. The Owner criterion
+   *  only ever decides cross-library matches, so with no partner it decides
+   *  nothing — showing it as a live setting in a ten-row list is a small lie. */
+  ownerInert?: boolean
 }
 
 /** Which badge a criterion gets, so the weight of a decision is visible in the
@@ -43,7 +47,9 @@ const KIND_BADGE: Record<string, { label: string; className: string }> = {
  * are the keyboard-reachable path, and on a ten-row list they are often
  * quicker anyway.
  */
-export default function RankingEditor({ ranking, onChange, onReset, saving }: RankingEditorProps) {
+export default function RankingEditor({
+  ranking, onChange, onReset, saving, ownerInert,
+}: RankingEditorProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
 
@@ -93,6 +99,7 @@ export default function RankingEditor({ ranking, onChange, onReset, saving }: Ra
           {ranking.map((row, index) => {
             const criterion = RANKING_CRITERIA[row.key]
             const badge = KIND_BADGE[criterion.kind]
+            const inert = ownerInert && row.key === 'owner'
             return (
               <li
                 key={row.key}
@@ -110,7 +117,7 @@ export default function RankingEditor({ ranking, onChange, onReset, saving }: Ra
                   'flex items-center gap-2 rounded-md border bg-background px-2 py-1.5',
                   dragIndex === index && 'opacity-40',
                   overIndex === index && dragIndex !== null && dragIndex !== index && 'border-blue-500',
-                  !row.enabled && 'opacity-60'
+                  (!row.enabled || inert) && 'opacity-60'
                 )}
               >
                 <GripVertical size={14} className="shrink-0 cursor-grab text-muted-foreground" />
@@ -134,8 +141,13 @@ export default function RankingEditor({ ranking, onChange, onReset, saving }: Ra
                   </TooltipContent>
                 </TooltipRoot>
 
-                {/* Direction. Disabled rows keep their setting visible rather
-                    than hiding it, so switching one back on is not a surprise. */}
+                {inert ? (
+                  <span className="shrink-0 text-[11px] italic text-muted-foreground">
+                    no effect — nobody shares with you
+                  </span>
+                ) : (
+                /* Direction. Disabled rows keep their setting visible rather
+                   than hiding it, so switching one back on is not a surprise. */
                 <select
                   value={row.direction}
                   onChange={(e) => update(index, { direction: e.target.value as 'desc' | 'asc' })}
@@ -145,6 +157,7 @@ export default function RankingEditor({ ranking, onChange, onReset, saving }: Ra
                   <option value="desc">{criterion.directions[0]}</option>
                   <option value="asc">{criterion.directions[1]}</option>
                 </select>
+                )}
 
                 <div className="flex shrink-0 items-center">
                   <Button
