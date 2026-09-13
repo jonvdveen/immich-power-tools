@@ -7,6 +7,81 @@ entry links to the commit history.
 Every release from here on gets an entry here, written for someone who
 just uses the app and doesn't want to read a diff.
 
+## v0.36.0 — 2026-09-12
+
+The De-Duplicator can now find photos that exist in both your library and a
+partner's — matches Immich itself is unable to make. Its Options panel has been
+rebuilt around that. And the two people screens, which Immich 3.2.0 broke
+outright, work again.
+
+### De-Duplicator
+
+- **Added: find copies that live in a partner's library.** Immich only ever
+  looks for duplicates inside one person's library at a time, so a photo you
+  and your partner both keep has always been invisible to it. A new
+  **Cross-library** view finds those, using the same image fingerprints Immich
+  already stores for its own search.
+
+  Press **Scan** to build the list. It works through your library a few hundred
+  photos at a time and remembers where it got to, so you can stop, close the tab
+  and pick it up later — roughly twenty minutes for a hundred thousand photos,
+  once. After that it only looks at what you have added since.
+
+  Matches are sorted into three confidence bands — **Exact**, **Near** and
+  **Review** — and you work one band at a time. The first two are safe to
+  auto-pick; **Review** is where the guesses live, so auto-pick deliberately
+  leaves it alone and waits for your eye. Anything weaker than Review is not
+  recorded at all: it measured only 6% correct, and this screen moves photos to
+  the trash.
+
+  Two things it will not do, by design. It can never remove your partner's
+  photo. And if only your copy carries a location, tags, a description or a
+  favourite marker, it keeps yours — that information cannot be moved onto a
+  photo you do not own, so it would simply be lost.
+
+  All of this only appears if someone is sharing their library **with you**.
+
+- **Changed: Options rebuilt.** It had grown into one long scroll with five
+  coloured warning boxes in it, and the two things you actually *do* there were
+  buried among the settings. It is now four collapsible sections — **Partner
+  Shares**, **Auto-select Rules**, **Disposition Rules**, **Set Aside** — one
+  open at a time, with the descriptions rewritten to say what happens rather
+  than how it works. Sections that cannot apply to you are hidden rather than
+  shown greyed out. One warning box remains, on the setting that genuinely
+  warrants it.
+
+- **Changed: the toolbar.** **Same library** is now **My library**, and it sits
+  with **Cross-library** at the top of the page next to **Refresh** — the
+  toolbar below acts on whichever list you pick, so the picker no longer sits
+  inside it. Whichever one you are on is filled in blue instead of a barely
+  visible grey. **Auto-pick** moved next to **Scan**, since they are the two
+  buttons that actually do something. **Refresh** was a few pixels taller than
+  everything around it; it is not any more.
+
+- **Fixed: the Scan button could get stuck showing "1".** That number is how
+  many of your photos have not been compared yet. The app bookmarks where the
+  last scan stopped — but it was rounding the bookmark down to the nearest whole
+  second, which left it sitting just *behind* the very photo it was meant to
+  mark as done. That photo then looked unchecked forever, and pressing Scan
+  re-checked it and rounded the bookmark down again. The bookmark is now stored
+  exactly. Press **Scan** once after updating and the count clears itself.
+
+### People
+
+- **Fixed: Manage People and Face Review stopped working entirely.** Immich
+  3.2.0 reorganised the way it stores faces and people, and both screens failed
+  on every request. The same change was quietly breaking parts of Albums,
+  Rewind, share links and the person conditions in Workflows.
+
+  Worth knowing why this needed care rather than a quick rename. Under the new
+  layout a person's id is only unique *within one account*, where it used to be
+  unique across the whole server. **Delete empty people** matched on that id
+  alone — so left as it was, it would have reached into other accounts on the
+  server and deleted their people too. It is now scoped to you, and that was
+  checked on the live server before it shipped: one throwaway empty person, one
+  press of the button, exactly one row removed, and 6,865 records across
+  fourteen other accounts untouched.
+
 ## v0.35.0 — 2026-09-10
 
 A new **De-Duplicator** replaces the Bulk Duplicate Finder. It can automatically

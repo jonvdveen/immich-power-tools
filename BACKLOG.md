@@ -123,9 +123,6 @@ Manage People query returns real counts and its ids resolve to real
   shares cluster groups between partners — which is plainly what the redesign is
   for — these will double-count or read a partner's name. Fix them then, or
   pre-emptively.
-- **FACE-2 — not verified in a browser.** The whole investigation was
-  server-side; nobody has clicked through either module since the fix. Both were
-  proven at the query layer against live data.
 - **FACE-3 — the app pins nothing.** `immich-server:release` will do this again.
   Worth a note in POWER-TOOLS.md that a major Immich bump can break the direct-SQL
   modules, and that `information_schema` diffing (the script used here) finds it
@@ -255,16 +252,14 @@ Implementation notes worth keeping:
   trash their own copy. Recoverable, and each side confirms, but there is no
   cross-account interlock and there probably cannot be one.
 
-- **Phase 2 built 2026-09-10, deployed to the local stack, unreleased.**
-  Cross-library scan (`/api/dedupe/scan`), the cluster read-back
-  (`/api/dedupe/pairs`), confidence bands, a Same library / Cross-library
-  switch, per-pair "not the same photo" verdicts, and the DEDUP-5 warning.
-  Migration `0009_old_stardust.sql` adds `dedupe_scan_state.cursor_asset_id`.
-  Verified: SQL plans and cost measured against the live database, the
-  `dedupe_pairs` upsert proven idempotent against a copy of app.db, 30 unit
-  tests on the band and Owner-warning logic. **Not yet verified in a browser** —
-  the feature needs a session as Stephanie (Jonathan has no incoming partner
-  share, so his account cannot exercise it at all).
+- **Phase 2 released in v0.36.0 (2026-09-12).** Cross-library scan
+  (`/api/dedupe/scan`), the cluster read-back (`/api/dedupe/pairs`), confidence
+  bands, a My library / Cross-library switch, per-pair "not the same photo"
+  verdicts, and the DEDUP-5 warning. Exercised for real on Stephanie's account
+  (Jonathan has no incoming partner share, so his cannot run it at all): a full
+  pass over 104,337 assets against Jonathan's library, indexing 21,091 exact,
+  4,442 near and 5,472 review pairs. Nothing has been *applied* from the
+  cross-library list yet — the list itself is built and browsed.
 
 ## Rate & Cull (photo rating/culling tool, `/assets/cull`; renamed from "Cull Photos" in v0.24.3)
 
