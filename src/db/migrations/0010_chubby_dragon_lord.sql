@@ -1,0 +1,1 @@
+ALTER TABLE `dedupe_scan_state` ADD `cursor_created_at` text;

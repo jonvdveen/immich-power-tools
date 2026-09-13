@@ -56,20 +56,37 @@ interface IPartner {
  * createdAt alone is not, because Immich stamps it from the transaction clock
  * and a bulk import can hand several assets the same value.
  *
- * But `date_trunc(...)` makes it non-sargable, so on its own the planner walks
- * `asset_createdAt_idx` from the beginning of time and throws away everything
- * before the cursor -- measured at 218,000 discarded rows per chunk once the
- * scan is a few months in, and growing. The redundant `>= watermark` lets it
- * seek instead. It excludes nothing: date_trunc only ever rounds down, so any
- * row satisfying the row comparison satisfies this too. Measured 6x fewer
- * buffers.
+ * The timestamp comes in as an ISO string rather than a Date so that Postgres's
+ * microseconds survive the round trip through app.db. An earlier version stored
+ * it as a Drizzle `timestamp`, which is whole seconds: the cursor landed
+ * *behind* the asset it named, so that asset reported itself outstanding on
+ * every status read and the Scan button sat on "1" forever.
+ *
+ * The `>= cursor` line is implied by the row comparison and is kept as
+ * insurance. It used to be load-bearing: the old `date_trunc(...)` form was not
+ * sargable, so without it the planner walked `asset_createdAt_idx` from the
+ * beginning of time and discarded 218,000 rows per chunk. With the plain
+ * comparison Postgres derives the index condition on its own -- verified by
+ * EXPLAIN, which seeks straight to the cursor either way.
  */
-function afterCursor(watermark: Date | null, cursorAssetId: string | null) {
-  if (!watermark || !cursorAssetId) return sql`true`;
-  const ts = watermark.toISOString();
-  return sql`a."createdAt" >= ${ts}::timestamptz
-             AND (date_trunc('milliseconds', a."createdAt"), a.id)
-                   > (${ts}::timestamptz, ${cursorAssetId}::uuid)`;
+function afterCursor(cursorCreatedAt: string | null, cursorAssetId: string | null) {
+  if (!cursorCreatedAt || !cursorAssetId) return sql`true`;
+  return sql`a."createdAt" >= ${cursorCreatedAt}::timestamptz
+             AND (a."createdAt", a.id)
+                   > (${cursorCreatedAt}::timestamptz, ${cursorAssetId}::uuid)`;
+}
+
+/**
+ * The cursor's timestamp for a stored scan state.
+ *
+ * `watermark` is only consulted for rows written before `cursor_created_at`
+ * existed. It is a whole second, so resuming from it re-probes at most the
+ * tail of one second -- free, because the pair write is an upsert -- and the
+ * first chunk replaces it with the full-precision value.
+ */
+function cursorTimeOf(state?: { cursorCreatedAt: string | null; watermark: Date | null }) {
+  if (state?.cursorCreatedAt) return state.cursorCreatedAt;
+  return state?.watermark ? state.watermark.toISOString() : null;
 }
 
 async function listPartners(userId: string): Promise<IPartner[]> {
@@ -93,10 +110,10 @@ async function listPartners(userId: string): Promise<IPartner[]> {
  */
 async function countProgress(
   userId: string,
-  watermark: Date | null,
+  cursorCreatedAt: string | null,
   cursorAssetId: string | null
 ): Promise<{ total: number; remaining: number }> {
-  const ahead = afterCursor(watermark, cursorAssetId);
+  const ahead = afterCursor(cursorCreatedAt, cursorAssetId);
 
   const { rows } = await db.execute(sql`
     SELECT count(*)                        AS total,
@@ -155,7 +172,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const state = stateFor.get(p.id);
         const { total, remaining } = await countProgress(
           ownerId,
-          state?.watermark ?? null,
+          cursorTimeOf(state),
           state?.cursorAssetId ?? null
         );
         return { partner: p, state, total, remaining };
@@ -209,14 +226,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       Math.max(1, Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : DEFAULT_CHUNK)
     );
 
-    const watermark = next.state?.watermark ?? null;
+    const cursorCreatedAt = cursorTimeOf(next.state);
     const cursorAssetId = next.state?.cursorAssetId ?? null;
-    // date_trunc on the left because the stored watermark is milliseconds and
-    // Postgres keeps microseconds. Truncating both sides can only ever re-probe
-    // the tail of one millisecond, never skip past it -- and re-probing is free,
-    // the write below is an upsert. Measured worst case on this library: seven
-    // assets share a millisecond, well inside a chunk.
-    const after = afterCursor(watermark, cursorAssetId);
+    const after = afterCursor(cursorCreatedAt, cursorAssetId);
 
     const startedAt = Date.now();
     const { rows } = await db.execute(sql`
@@ -232,7 +244,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
          LIMIT ${chunkSize}
       )
       SELECT mine.id::text            AS "assetId",
-             mine."createdAt"         AS "createdAt",
+             -- As text, at Postgres's own microsecond precision: this string is
+             -- stored verbatim as the next cursor, so it has to survive the
+             -- round trip unrounded. A Date would not.
+             to_char(mine."createdAt" AT TIME ZONE 'UTC',
+                     'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "createdAtIso",
              mine."originalFileName"  AS "myName",
              m.id::text               AS "matchId",
              m."originalFileName"     AS "theirName",
@@ -257,13 +273,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const found = { exact: 0, near: 0, review: 0 };
     const values: (typeof dedupePairs.$inferInsert)[] = [];
     const probed = new Set<string>();
-    let lastCreatedAt: Date | null = null;
+    let lastCreatedAtIso: string | null = null;
     let lastAssetId: string | null = null;
 
     for (const r of rows as any[]) {
       probed.add(r.assetId);
       // Rows come back in cursor order, so the last one seen is the new cursor.
-      lastCreatedAt = new Date(r.createdAt);
+      lastCreatedAtIso = r.createdAtIso;
       lastAssetId = r.assetId;
 
       if (!r.matchId) continue;
@@ -299,34 +315,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
     }
 
-    // A cursor that doesn't move would loop forever. It can only happen if a
-    // whole chunk shares one millisecond of createdAt, which needs hundreds of
-    // assets inserted in the same transaction -- report it rather than spin.
+    // A cursor that doesn't move would loop forever. The strict `>` should make
+    // that impossible -- keep the guard anyway, so a future change to the cursor
+    // key reports itself instead of spinning.
     const stalled =
       lastAssetId !== null &&
       lastAssetId === cursorAssetId &&
-      lastCreatedAt?.getTime() === watermark?.getTime();
+      lastCreatedAtIso === cursorCreatedAt;
 
-    if (lastAssetId && lastCreatedAt && !stalled) {
+    if (lastAssetId && lastCreatedAtIso && !stalled) {
       const scannedCount = (next.state?.scannedCount ?? 0) + probed.size;
+      const cursor = {
+        // Whole seconds, and not read back as the cursor -- see the schema note.
+        watermark: new Date(lastCreatedAtIso),
+        cursorCreatedAt: lastCreatedAtIso,
+        cursorAssetId: lastAssetId,
+        scannedCount,
+        lastRunAt: new Date(),
+      };
       await appDb
         .insert(dedupeScanState)
-        .values({
-          ownerId,
-          partnerOwnerId: next.partner.id,
-          watermark: lastCreatedAt,
-          cursorAssetId: lastAssetId,
-          scannedCount,
-          lastRunAt: new Date(),
-        })
+        .values({ ownerId, partnerOwnerId: next.partner.id, ...cursor })
         .onConflictDoUpdate({
           target: [dedupeScanState.ownerId, dedupeScanState.partnerOwnerId],
-          set: {
-            watermark: lastCreatedAt,
-            cursorAssetId: lastAssetId,
-            scannedCount,
-            lastRunAt: new Date(),
-          },
+          set: cursor,
         });
     }
 
@@ -334,8 +346,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // about what is probeable. Treat this partner as finished rather than
     // handing the client a loop it can never exit.
     const partnerRemaining =
-      lastAssetId && lastCreatedAt
-        ? (await countProgress(ownerId, lastCreatedAt, lastAssetId)).remaining
+      lastAssetId && lastCreatedAtIso
+        ? (await countProgress(ownerId, lastCreatedAtIso, lastAssetId)).remaining
         : 0;
     const remainingNow = perPartner.reduce(
       (sum, p) => sum + (p.partner.id === next.partner.id ? partnerRemaining : p.remaining),
@@ -358,7 +370,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lastRunAt: new Date(),
       elapsedMs: Date.now() - startedAt,
       error: stalled
-        ? "The scan could not advance past a block of assets that all share the same timestamp. Clear the index and start over, or raise the chunk size."
+        ? "The scan could not advance past the asset it stopped on. Clear the index and start over."
         : undefined,
     });
   } catch (error: any) {

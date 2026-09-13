@@ -70,21 +70,33 @@ export const dedupePairs = sqliteTable("dedupe_pairs", {
 ]);
 
 /**
- * Where the incremental scan got to, per (you, partner) pair. The watermark is
- * the highest asset createdAt already probed, so a top-up only walks assets
- * added since.
+ * Where the incremental scan got to, per (you, partner) pair. The cursor is the
+ * last asset already probed, so a top-up only walks assets added since.
  *
  * `createdAt` alone is not a safe cursor: Immich stamps it from the
  * transaction clock, so a bulk import can give hundreds of assets the same
- * value. Resuming on `> watermark` would step over the rest of a tie, and
- * `>= watermark` would loop on it forever once a tie ran longer than one
+ * value. Resuming on `> createdAt` would step over the rest of a tie, and
+ * `>= createdAt` would loop on it forever once a tie ran longer than one
  * chunk. The asset id breaks that tie, and (createdAt, id) is unique.
+ *
+ * The timestamp half is stored as an ISO **string**, not a Date. Drizzle's
+ * `integer({ mode: "timestamp" })` stores whole seconds, and rounding the
+ * cursor down to the second put it *behind* the very asset it pointed at:
+ * every status read then reported that asset as still outstanding, forever.
+ * Text keeps Postgres's microseconds intact, so the cursor compares exactly
+ * equal to the row it names.
  */
 export const dedupeScanState = sqliteTable("dedupe_scan_state", {
   id: text("id").primaryKey().$defaultFn(() => randomUUID()),
   ownerId: text("owner_id").notNull(),
   partnerOwnerId: text("partner_owner_id").notNull(),
+  /** Legacy, and no longer the cursor: whole seconds only. Still written so a
+   *  human reading app.db can see roughly how far the scan has reached, and
+   *  read once as a fallback for rows written before `cursor_created_at`. */
   watermark: integer("watermark", { mode: "timestamp" }),
+  /** First half of the resume cursor: the asset's `createdAt` as an ISO string,
+   *  microseconds included. See the note above on why this is not a Date. */
+  cursorCreatedAt: text("cursor_created_at"),
   /** Second half of the resume cursor — see the note above. */
   cursorAssetId: text("cursor_asset_id"),
   scannedCount: integer("scanned_count").notNull().default(0),

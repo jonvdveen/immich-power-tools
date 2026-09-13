@@ -92,16 +92,27 @@ resuming on `> watermark` would step over the rest of a tie. Measured worst case
 on this library: **seven** assets share a millisecond, comfortably inside a chunk.
 A stall guard reports rather than spins if that ever exceeds a chunk.
 
-The watermark column is a millisecond timestamp and Postgres keeps microseconds,
-so the comparison truncates both sides. That can only re-probe the tail of one
-millisecond, never skip past it, and re-probing is free — the write is an upsert
-(verified: re-running an identical chunk leaves the row count unchanged).
+The timestamp half is stored as an **ISO string** (`cursor_created_at`), not as
+a Drizzle `timestamp`. This was a bug through v0.35: `integer({ mode: "timestamp" })`
+stores whole seconds, so the cursor was rounded down and landed *behind* the very
+asset it named. That asset then satisfied `> cursor` on every status read, and
+`remaining` sat at 1 forever — re-probed on each Scan, re-rounded, unchanged.
+Reproduced on the live index (cursor asset `createdAt` `07:23:49.786158`, stored
+watermark `07:23:49`), and confirmed to go to 0 with the exact value. Rows written
+before `0010` fall back to `watermark` once; the first chunk replaces it.
 
-The predicate carries a redundant `createdAt >= watermark` alongside the row
-comparison. `date_trunc` is not sargable, so without it the planner walks
-`asset_createdAt_idx` from the beginning of time — measured 218,000 discarded
-rows per chunk a few months in, and growing. With it, 36,000 and shrinking.
-Six times fewer buffers.
+`to_char(... 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` carries Postgres's microseconds out
+and re-parses to the identical instant (verified `= "createdAt"`). Because the
+comparison is now exact rather than `date_trunc`'d, it also matches the chunk's
+`ORDER BY (createdAt, id)` precisely — the truncated form did not, which could
+skip an unprobed asset sharing a millisecond with the cursor.
+
+The predicate keeps a redundant `createdAt >= cursor` beside the row comparison.
+Under `date_trunc` that was load-bearing — not sargable, so the planner walked
+`asset_createdAt_idx` from the beginning of time, 218,000 discarded rows per chunk
+and growing. With the plain comparison Postgres derives `Index Cond: "createdAt"
+>= …` from the ROW itself (verified by EXPLAIN), so the line is now insurance
+rather than necessity.
 
 ### Known gap
 
@@ -221,14 +232,17 @@ that is what the band is for.
     dedupe_pairs       (owner_id, asset_id, partner_asset_id, partner_owner_id,
                         distance, stem_match, band, discovered_at)
     dedupe_dismissals  (owner_id, group_key, paired_asset_id, dismissed_at)
-    dedupe_scan_state  (owner_id, partner_owner_id, watermark, scanned_count,
-                        last_run_at)
+    dedupe_scan_state  (owner_id, partner_owner_id, watermark, cursor_created_at,
+                        cursor_asset_id, scanned_count, last_run_at)
     dedupe_ranking     (owner_id, config, updated_at)
 
-All four shipped in migration `0008_sharp_gideon.sql`. Phase 2 added one column
-in `0009_old_stardust.sql` — `dedupe_scan_state.cursor_asset_id`, the second half
-of the resume cursor (see section 3). Applied at container boot, no stop needed;
-confirmed on the live stack.
+All four shipped in migration `0008_sharp_gideon.sql`. Phase 2 added
+`dedupe_scan_state.cursor_asset_id` in `0009_old_stardust.sql` — the second half
+of the resume cursor — and `0010_chubby_dragon_lord.sql` added
+`cursor_created_at`, the first half, for the reason in section 3. `watermark` is
+left in place: no longer the cursor, still a legible timestamp for anyone reading
+app.db, and the one-time fallback for pre-`0010` rows. Applied at container boot,
+no stop needed; confirmed on the live stack.
 
 `dedupe_dismissals` now holds two kinds of row and they are cleared separately.
 "Restore all skipped groups" must not also throw away every "not the same photo"
